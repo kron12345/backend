@@ -1,0 +1,378 @@
+openapi: 3.1.0
+info:
+  title: Planning Activities API
+  version: 0.1.0
+  description: |
+    REST-Schnittstelle für die Gantt-Aktivitäten der Order-Management-Anwendung.
+    Alle Clients arbeiten gegen denselben Datenbestand. Validierungen für Orts-,
+    Kapazitäts-, Arbeitszeit- und Qualifikationskonflikte werden serverseitig
+    ausgeführt und können gezielt angefordert werden.
+servers:
+  - url: /api/v1
+    description: Default Backend-URL (überschreibbar per API_CONFIG).
+paths:
+  /planning/stages/{stageId}:
+    get:
+      summary: Liefert Ressourcen, Aktivitäten und Zeitscheibe eines Planungsstadiums.
+      operationId: getPlanningStage
+      parameters:
+        - $ref: '#/components/parameters/StageId'
+      responses:
+        '200':
+          description: Stage Snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanningStageSnapshot'
+  /planning/stages/{stageId}/resources:
+    get:
+      summary: Listet Ressourcen eines Planungsstadiums.
+      operationId: listStageResources
+      parameters:
+        - $ref: '#/components/parameters/StageId'
+      responses:
+        '200':
+          description: Liste der Ressourcen.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Resource'
+    put:
+      summary: Batch-Synchronisation von Ressourcen (Create/Update/Delete).
+      operationId: mutateStageResources
+      parameters:
+        - $ref: '#/components/parameters/StageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceMutationRequest'
+      responses:
+        '200':
+          description: Ergebnis der Ressourcensynchronisation inkl. neuer Version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceMutationResponse'
+  /planning/stages/{stageId}/activities:
+    get:
+      summary: Listet Aktivitäten gefiltert nach Zeitraum/Ressourcen.
+      operationId: listStageActivities
+      parameters:
+        - $ref: '#/components/parameters/StageId'
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Startzeit (inklusive) zur Filterung.
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Endzeit (exklusive) zur Filterung.
+        - name: resourceIds
+          in: query
+          schema:
+            type: string
+          description: Kommagetrennte Ressourcen-IDs.
+      responses:
+        '200':
+          description: Gefilterte Aktivitätenliste.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Activity'
+    put:
+      summary: Batch-Synchronisation von Aktivitäten (Create/Update/Delete).
+      operationId: mutateStageActivities
+      parameters:
+        - $ref: '#/components/parameters/StageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivityMutationRequest'
+      responses:
+        '200':
+          description: Ergebnis der Synchronisation inkl. neuer Version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityMutationResponse'
+  /planning/stages/{stageId}/activities:validate:
+    post:
+      summary: Startet serverseitige Validierung der angegebenen Aktivitäten.
+      description: |
+        Prüft Ortskonflikte (gleicher Standort, überlappende Zeiten),
+        Kapazitätskonflikte (Kapazitätsgruppe überschritten),
+        Arbeitszeitregeln (z. B. Ruhezeiten, maximale Dauer) sowie
+        Qualifikationsanforderungen. Weitere Regeln lassen sich über `rule` =
+        `custom` ergänzen.
+      operationId: validateStageActivities
+      parameters:
+        - $ref: '#/components/parameters/StageId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivityValidationRequest'
+      responses:
+        '200':
+          description: Liste der gefundenen Konflikte.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityValidationResponse'
+
+components:
+  parameters:
+    StageId:
+      name: stageId
+      in: path
+      required: true
+      schema:
+        type: string
+        enum:
+          - base
+          - operations
+          - dispatch
+  schemas:
+    PlanningStageSnapshot:
+      type: object
+      properties:
+        stageId:
+          type: string
+        resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/Resource'
+        activities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Activity'
+        timelineRange:
+          $ref: '#/components/schemas/TimelineRange'
+        version:
+          type: string
+          nullable: true
+      required: [stageId, resources, activities, timelineRange]
+    TimelineRange:
+      type: object
+      properties:
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+      required: [start, end]
+    Resource:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [personnel-service, vehicle-service, personnel, vehicle]
+        dailyServiceCapacity:
+          type: integer
+          minimum: 0
+        attributes:
+          type: object
+          additionalProperties: true
+      required: [id, name, kind]
+    Activity:
+      type: object
+      properties:
+        id:
+          type: string
+        resourceId:
+          type: string
+        participantResourceIds:
+          type: array
+          items:
+            type: string
+        clientId:
+          type: string
+          nullable: true
+        title:
+          type: string
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+          nullable: true
+        type:
+          type: string
+        from:
+          type: string
+          nullable: true
+        to:
+          type: string
+          nullable: true
+        remark:
+          type: string
+          nullable: true
+        serviceId:
+          type: string
+          nullable: true
+        serviceTemplateId:
+          type: string
+          nullable: true
+        serviceDate:
+          type: string
+          nullable: true
+        serviceCategory:
+          type: string
+          nullable: true
+        serviceRole:
+          type: string
+          nullable: true
+        locationId:
+          type: string
+          nullable: true
+        locationLabel:
+          type: string
+          nullable: true
+        capacityGroupId:
+          type: string
+          nullable: true
+        requiredQualifications:
+          type: array
+          items:
+            type: string
+        assignedQualifications:
+          type: array
+          items:
+            type: string
+        workRuleTags:
+          type: array
+          items:
+            type: string
+        meta:
+          type: object
+          additionalProperties: true
+      required: [id, resourceId, title, start]
+    ActivityMutationRequest:
+      type: object
+      properties:
+        upserts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Activity'
+        deleteIds:
+          type: array
+          items:
+            type: string
+        clientRequestId:
+          type: string
+      additionalProperties: false
+    ActivityMutationResponse:
+      type: object
+      properties:
+        appliedUpserts:
+          type: array
+          items:
+            type: string
+        deletedIds:
+          type: array
+          items:
+            type: string
+        version:
+          type: string
+          nullable: true
+      required: [appliedUpserts, deletedIds]
+    ResourceMutationRequest:
+      type: object
+      properties:
+        upserts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Resource'
+        deleteIds:
+          type: array
+          items:
+            type: string
+        clientRequestId:
+          type: string
+      additionalProperties: false
+    ResourceMutationResponse:
+      type: object
+      properties:
+        appliedUpserts:
+          type: array
+          items:
+            type: string
+        deletedIds:
+          type: array
+          items:
+            type: string
+        version:
+          type: string
+          nullable: true
+      required: [appliedUpserts, deletedIds]
+    ActivityValidationRequest:
+      type: object
+      properties:
+        activityIds:
+          type: array
+          items:
+            type: string
+        windowStart:
+          type: string
+          format: date-time
+        windowEnd:
+          type: string
+          format: date-time
+        resourceIds:
+          type: array
+          items:
+            type: string
+        clientRequestId:
+          type: string
+      additionalProperties: false
+    ActivityValidationResponse:
+      type: object
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActivityValidationIssue'
+      required: [generatedAt, issues]
+    ActivityValidationIssue:
+      type: object
+      properties:
+        id:
+          type: string
+        rule:
+          type: string
+          enum: [location-conflict, capacity-conflict, working-time, qualification, custom]
+        severity:
+          type: string
+          enum: [info, warning, error]
+        message:
+          type: string
+        activityIds:
+          type: array
+          items:
+            type: string
+        meta:
+          type: object
+          additionalProperties: true
+      required: [id, rule, severity, message, activityIds]
