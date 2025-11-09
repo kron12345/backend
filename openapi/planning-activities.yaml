@@ -132,6 +132,214 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ActivityValidationResponse'
+  /planning/stages/{stageId}/events:
+    get:
+      summary: Server-Sent-Events für Echtzeit-Sync einer Planungsstage.
+      description: |
+        Liefert ein `text/event-stream`, das Ressourcen-, Aktivitäten- und Timeline-Änderungen
+        in Echtzeit überträgt. Jeder Datensatz ist ein JSON-Objekt vom Typ
+        `PlanningStageRealtimeEvent`. Clients sollten pro Stage genau eine Verbindung öffnen.
+      operationId: streamPlanningStageEvents
+      parameters:
+        - $ref: '#/components/parameters/StageId'
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/ConnectionId'
+      responses:
+        '200':
+          description: |
+            Event-Stream. Jeder `data:`-Block enthält ein JSON-Objekt vom Typ
+            `PlanningStageRealtimeEvent`. Der Server sollte Verbindungen offen halten
+            und bei Inaktivität Heartbeat-Ereignisse senden.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /planning/master-data/personnel-service-pools:
+    get:
+      summary: Listet Personaldienstpools.
+      operationId: listPersonnelServicePools
+      responses:
+        '200':
+          description: Alle gespeicherten Personaldienstpools.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PersonnelServicePool'
+    put:
+      summary: Ersetzt den kompletten Satz an Personaldienstpools.
+      operationId: savePersonnelServicePools
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonnelServicePoolListRequest'
+      responses:
+        '200':
+          description: Persistierte Personaldienstpools.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PersonnelServicePool'
+  /planning/master-data/personnel-pools:
+    get:
+      summary: Listet Personalpools.
+      operationId: listPersonnelPools
+      responses:
+        '200':
+          description: Alle gespeicherten Personalpools.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PersonnelPool'
+    put:
+      summary: Ersetzt den kompletten Satz an Personalpools.
+      operationId: savePersonnelPools
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonnelPoolListRequest'
+      responses:
+        '200':
+          description: Persistierte Personalpools.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PersonnelPool'
+  /planning/master-data/vehicle-service-pools:
+    get:
+      summary: Listet Fahrzeugdienstpools.
+      operationId: listVehicleServicePools
+      responses:
+        '200':
+          description: Alle gespeicherten Fahrzeugdienstpools.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VehicleServicePool'
+    put:
+      summary: Ersetzt den kompletten Satz an Fahrzeugdienstpools.
+      operationId: saveVehicleServicePools
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VehicleServicePoolListRequest'
+      responses:
+        '200':
+          description: Persistierte Fahrzeugdienstpools.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VehicleServicePool'
+  /planning/master-data/vehicle-pools:
+    get:
+      summary: Listet Fahrzeugpools.
+      operationId: listVehiclePools
+      responses:
+        '200':
+          description: Alle gespeicherten Fahrzeugpools.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VehiclePool'
+    put:
+      summary: Ersetzt den kompletten Satz an Fahrzeugpools.
+      operationId: saveVehiclePools
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VehiclePoolListRequest'
+      responses:
+        '200':
+          description: Persistierte Fahrzeugpools.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VehiclePool'
+  /planning/master-data/vehicle-types:
+    get:
+      summary: Listet Fahrzeugtypen.
+      operationId: listVehicleTypes
+      responses:
+        '200':
+          description: Alle gespeicherten Fahrzeugtypen.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VehicleType'
+    put:
+      summary: Ersetzt den kompletten Satz an Fahrzeugtypen.
+      operationId: saveVehicleTypes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VehicleTypeListRequest'
+      responses:
+        '200':
+          description: Persistierte Fahrzeugtypen.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VehicleType'
+  /planning/master-data/vehicle-compositions:
+    get:
+      summary: Listet Fahrzeugkompositionen.
+      operationId: listVehicleCompositions
+      responses:
+        '200':
+          description: Alle gespeicherten Fahrzeugkompositionen.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VehicleComposition'
+    put:
+      summary: Ersetzt den kompletten Satz an Fahrzeugkompositionen.
+      operationId: saveVehicleCompositions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VehicleCompositionListRequest'
+      responses:
+        '200':
+          description: Persistierte Fahrzeugkompositionen.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VehicleComposition'
 
 components:
   parameters:
@@ -145,6 +353,20 @@ components:
           - base
           - operations
           - dispatch
+    UserId:
+      name: userId
+      in: query
+      required: false
+      description: Optional User-Identität, damit der SSE-Stream nur passende Events liefert.
+      schema:
+        type: string
+    ConnectionId:
+      name: connectionId
+      in: query
+      required: false
+      description: Eindeutiger Verbindungs- bzw. Tab-Identifier, um Echo-Events zu unterdrücken.
+      schema:
+        type: string
   schemas:
     PlanningStageSnapshot:
       type: object
@@ -262,10 +484,48 @@ components:
           type: array
           items:
             type: string
+        attributes:
+          type: object
+          additionalProperties: true
+          description: Freies Attribut-Bag für kundenspezifische Felder.
         meta:
           type: object
           additionalProperties: true
+          description: Legacy-Feld für benutzerdefinierte Daten (bevorzugt `attributes` verwenden).
       required: [id, resourceId, title, start]
+    PlanningStageRealtimeEvent:
+      type: object
+      description: Nachricht, die über den SSE-Stream `/planning/stages/{stageId}/events` gesendet wird.
+      properties:
+        stageId:
+          type: string
+          enum: [base, operations, dispatch]
+        scope:
+          type: string
+          enum: [resources, activities, timeline]
+        version:
+          type: string
+          nullable: true
+        sourceClientId:
+          type: string
+          nullable: true
+        sourceConnectionId:
+          type: string
+          nullable: true
+        upserts:
+          description: Ressourcen- oder Aktivitätsobjekte – abhängig von `scope`.
+          type: array
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/Resource'
+              - $ref: '#/components/schemas/Activity'
+        deleteIds:
+          type: array
+          items:
+            type: string
+        timelineRange:
+          $ref: '#/components/schemas/TimelineRange'
+      required: [stageId, scope]
     ActivityMutationRequest:
       type: object
       properties:
@@ -376,3 +636,242 @@ components:
           type: object
           additionalProperties: true
       required: [id, rule, severity, message, activityIds]
+    PersonnelServicePool:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        serviceIds:
+          type: array
+          items:
+            type: string
+        shiftCoordinator:
+          type: string
+          nullable: true
+        contactEmail:
+          type: string
+          format: email
+          nullable: true
+      required: [id, name, serviceIds]
+        attributes:
+          type: object
+          additionalProperties: true
+    PersonnelServicePoolListRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PersonnelServicePool'
+      required: [items]
+    PersonnelPool:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        personnelIds:
+          type: array
+          items:
+            type: string
+        locationCode:
+          type: string
+          nullable: true
+      required: [id, name, personnelIds]
+        attributes:
+          type: object
+          additionalProperties: true
+    PersonnelPoolListRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PersonnelPool'
+      required: [items]
+    VehicleServicePool:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        serviceIds:
+          type: array
+          items:
+            type: string
+        dispatcher:
+          type: string
+          nullable: true
+      required: [id, name, serviceIds]
+        attributes:
+          type: object
+          additionalProperties: true
+    VehicleServicePoolListRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VehicleServicePool'
+      required: [items]
+    VehiclePool:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        vehicleIds:
+          type: array
+          items:
+            type: string
+        depotManager:
+          type: string
+          nullable: true
+      required: [id, name, vehicleIds]
+        attributes:
+          type: object
+          additionalProperties: true
+    VehiclePoolListRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VehiclePool'
+      required: [items]
+    VehicleType:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        category:
+          type: string
+          nullable: true
+        capacity:
+          type: integer
+          nullable: true
+        maxSpeed:
+          type: integer
+          nullable: true
+        maintenanceIntervalDays:
+          type: integer
+          nullable: true
+        energyType:
+          type: string
+          nullable: true
+        manufacturer:
+          type: string
+          nullable: true
+        trainTypeCode:
+          type: string
+          nullable: true
+        lengthMeters:
+          type: number
+          format: float
+          nullable: true
+        weightTons:
+          type: number
+          format: float
+          nullable: true
+        brakeType:
+          type: string
+          nullable: true
+        brakePercentage:
+          type: integer
+          nullable: true
+        tiltingCapability:
+          type: string
+          enum: [none, passive, active]
+          nullable: true
+        powerSupplySystems:
+          type: array
+          items:
+            type: string
+        trainProtectionSystems:
+          type: array
+          items:
+            type: string
+        etcsLevel:
+          type: string
+          nullable: true
+        gaugeProfile:
+          type: string
+          nullable: true
+        maxAxleLoad:
+          type: number
+          format: float
+          nullable: true
+        noiseCategory:
+          type: string
+          nullable: true
+        remarks:
+          type: string
+          nullable: true
+      required: [id, label]
+        attributes:
+          type: object
+          additionalProperties: true
+    VehicleTypeListRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VehicleType'
+      required: [items]
+    VehicleCompositionEntry:
+      type: object
+      properties:
+        typeId:
+          type: string
+        quantity:
+          type: integer
+      required: [typeId, quantity]
+    VehicleComposition:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/VehicleCompositionEntry'
+        turnaroundBuffer:
+          type: string
+          nullable: true
+        remark:
+          type: string
+          nullable: true
+      required: [id, name, entries]
+        attributes:
+          type: object
+          additionalProperties: true
+    VehicleCompositionListRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VehicleComposition'
+      required: [items]

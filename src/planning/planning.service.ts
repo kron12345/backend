@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Observable, Subject } from 'rxjs';
 import {
   Activity,
   ActivityFilters,
@@ -11,6 +12,25 @@ import {
   Resource,
   ResourceMutationRequest,
   ResourceMutationResponse,
+  PersonnelServicePool,
+  PersonnelServicePoolListRequest,
+  PersonnelServicePoolListResponse,
+  PersonnelPool,
+  PersonnelPoolListRequest,
+  PersonnelPoolListResponse,
+  VehicleServicePool,
+  VehicleServicePoolListRequest,
+  VehicleServicePoolListResponse,
+  VehiclePool,
+  VehiclePoolListRequest,
+  VehiclePoolListResponse,
+  VehicleType,
+  VehicleTypeListRequest,
+  VehicleTypeListResponse,
+  VehicleComposition,
+  VehicleCompositionListRequest,
+  VehicleCompositionListResponse,
+  PlanningStageRealtimeEvent,
   StageId,
   TimelineRange,
   STAGE_IDS,
@@ -25,10 +45,26 @@ interface StageState {
   version: string | null;
 }
 
+interface SourceContext {
+  userId?: string;
+  connectionId?: string;
+}
+
 @Injectable()
 export class PlanningService {
   private readonly stages = new Map<StageId, StageState>();
   private validationIssueCounter = 0;
+  private readonly stageEventSubjects = new Map<
+    StageId,
+    Subject<PlanningStageRealtimeEvent>
+  >();
+  private readonly heartbeatIntervalMs = 30000;
+  private personnelServicePools = this.createSeedPersonnelServicePools();
+  private personnelPools = this.createSeedPersonnelPools();
+  private vehicleServicePools = this.createSeedVehicleServicePools();
+  private vehiclePools = this.createSeedVehiclePools();
+  private vehicleTypes = this.createSeedVehicleTypes();
+  private vehicleCompositions = this.createSeedVehicleCompositions();
 
   constructor() {
     STAGE_IDS.forEach((stageId) => {
@@ -63,6 +99,7 @@ export class PlanningService {
     request?: ActivityMutationRequest,
   ): ActivityMutationResponse {
     const stage = this.getStage(stageId);
+    const previousTimeline = { ...stage.timelineRange };
     const upserts = request?.upserts ?? [];
     const deleteIds = new Set(request?.deleteIds ?? []);
     const appliedUpserts: string[] = [];
@@ -89,12 +126,125 @@ export class PlanningService {
       stage.activities,
       stage.timelineRange,
     );
+    const timelineChanged =
+      previousTimeline.start !== stage.timelineRange.start ||
+      previousTimeline.end !== stage.timelineRange.end;
+
+    const sourceContext = this.extractSourceContext(request?.clientRequestId);
+    if (appliedUpserts.length || deletedIds.length) {
+      this.emitStageEvent(stage.stageId, {
+        stageId: stage.stageId,
+        scope: 'activities',
+        version: stage.version,
+        sourceClientId: sourceContext.userId,
+        sourceConnectionId: sourceContext.connectionId,
+        upserts: appliedUpserts.length
+          ? this.collectActivitySnapshots(stage, appliedUpserts)
+          : undefined,
+        deleteIds: deletedIds.length ? [...deletedIds] : undefined,
+      });
+    }
+    if (timelineChanged) {
+      this.emitTimelineEvent(stage, sourceContext);
+    }
 
     return {
       appliedUpserts,
       deletedIds,
       version: stage.version,
     };
+  }
+
+  listPersonnelServicePools(): PersonnelServicePoolListResponse {
+    return {
+      items: this.personnelServicePools.map((pool) =>
+        this.clonePersonnelServicePool(pool),
+      ),
+    };
+  }
+
+  savePersonnelServicePools(
+    request?: PersonnelServicePoolListRequest,
+  ): PersonnelServicePoolListResponse {
+    const incoming = request?.items ?? [];
+    this.personnelServicePools = incoming.map((pool) =>
+      this.clonePersonnelServicePool(pool),
+    );
+    return this.listPersonnelServicePools();
+  }
+
+  listPersonnelPools(): PersonnelPoolListResponse {
+    return {
+      items: this.personnelPools.map((pool) => this.clonePersonnelPool(pool)),
+    };
+  }
+
+  savePersonnelPools(
+    request?: PersonnelPoolListRequest,
+  ): PersonnelPoolListResponse {
+    const incoming = request?.items ?? [];
+    this.personnelPools = incoming.map((pool) => this.clonePersonnelPool(pool));
+    return this.listPersonnelPools();
+  }
+
+  listVehicleServicePools(): VehicleServicePoolListResponse {
+    return {
+      items: this.vehicleServicePools.map((pool) =>
+        this.cloneVehicleServicePool(pool),
+      ),
+    };
+  }
+
+  saveVehicleServicePools(
+    request?: VehicleServicePoolListRequest,
+  ): VehicleServicePoolListResponse {
+    const incoming = request?.items ?? [];
+    this.vehicleServicePools = incoming.map((pool) =>
+      this.cloneVehicleServicePool(pool),
+    );
+    return this.listVehicleServicePools();
+  }
+
+  listVehiclePools(): VehiclePoolListResponse {
+    return {
+      items: this.vehiclePools.map((pool) => this.cloneVehiclePool(pool)),
+    };
+  }
+
+  saveVehiclePools(request?: VehiclePoolListRequest): VehiclePoolListResponse {
+    const incoming = request?.items ?? [];
+    this.vehiclePools = incoming.map((pool) => this.cloneVehiclePool(pool));
+    return this.listVehiclePools();
+  }
+
+  listVehicleTypes(): VehicleTypeListResponse {
+    return {
+      items: this.vehicleTypes.map((type) => this.cloneVehicleType(type)),
+    };
+  }
+
+  saveVehicleTypes(request?: VehicleTypeListRequest): VehicleTypeListResponse {
+    const incoming = request?.items ?? [];
+    this.vehicleTypes = incoming.map((type) => this.cloneVehicleType(type));
+    return this.listVehicleTypes();
+  }
+
+  listVehicleCompositions(): VehicleCompositionListResponse {
+    return {
+      items: this.vehicleCompositions.map((composition) =>
+        this.cloneVehicleComposition(composition),
+      ),
+    };
+  }
+
+  saveVehicleCompositions(
+    request?: VehicleCompositionListRequest,
+  ): VehicleCompositionListResponse {
+    const incoming = request?.items ?? [];
+    this.vehicleCompositions = incoming.map((composition) =>
+      this.cloneVehicleComposition(composition),
+    );
+    return this.listVehicleCompositions();
   }
 
   validateActivities(
@@ -122,11 +272,37 @@ export class PlanningService {
     };
   }
 
+  streamStageEvents(
+    stageId: string,
+    _userId?: string,
+    _connectionId?: string,
+  ): Observable<PlanningStageRealtimeEvent> {
+    const stage = this.getStage(stageId);
+    const subject = this.getStageEventSubject(stage.stageId);
+    return new Observable<PlanningStageRealtimeEvent>((subscriber) => {
+      const subscription = subject.subscribe({
+        next: (event) => subscriber.next(event),
+        error: (error) => subscriber.error(error),
+        complete: () => subscriber.complete(),
+      });
+      subscriber.next(this.createTimelineEvent(stage));
+      const heartbeat = setInterval(() => {
+        const currentStage = this.getStage(stage.stageId);
+        subscriber.next(this.createTimelineEvent(currentStage));
+      }, this.heartbeatIntervalMs);
+      return () => {
+        clearInterval(heartbeat);
+        subscription.unsubscribe();
+      };
+    });
+  }
+
   mutateResources(
     stageId: string,
     request?: ResourceMutationRequest,
   ): ResourceMutationResponse {
     const stage = this.getStage(stageId);
+    const previousTimeline = { ...stage.timelineRange };
     const upserts = request?.upserts ?? [];
     const deleteIds = new Set(request?.deleteIds ?? []);
     const appliedUpserts: string[] = [];
@@ -150,21 +326,60 @@ export class PlanningService {
 
     const deletedSet = deletedIds.length ? new Set(deletedIds) : undefined;
     let activitiesChanged = false;
+    const orphanedActivityIds: string[] = [];
     if (deletedSet) {
       const originalLength = stage.activities.length;
       // Drop Aktivitäten ohne gültige Ressource, damit der Snapshot konsistent bleibt.
       stage.activities = stage.activities.filter(
-        (activity) => !deletedSet.has(activity.resourceId),
+        (activity) => {
+          if (deletedSet.has(activity.resourceId)) {
+            orphanedActivityIds.push(activity.id);
+            return false;
+          }
+          return true;
+        },
       );
       activitiesChanged = stage.activities.length !== originalLength;
     }
 
     stage.version = this.nextVersion();
+    let timelineChanged = false;
     if (activitiesChanged) {
       stage.timelineRange = this.computeTimelineRange(
         stage.activities,
         stage.timelineRange,
       );
+      timelineChanged =
+        previousTimeline.start !== stage.timelineRange.start ||
+        previousTimeline.end !== stage.timelineRange.end;
+    }
+
+    const sourceContext = this.extractSourceContext(request?.clientRequestId);
+    if (appliedUpserts.length || deletedIds.length) {
+      this.emitStageEvent(stage.stageId, {
+        stageId: stage.stageId,
+        scope: 'resources',
+        version: stage.version,
+        sourceClientId: sourceContext.userId,
+        sourceConnectionId: sourceContext.connectionId,
+        upserts: appliedUpserts.length
+          ? this.collectResourceSnapshots(stage, appliedUpserts)
+          : undefined,
+        deleteIds: deletedIds.length ? [...deletedIds] : undefined,
+      });
+    }
+    if (orphanedActivityIds.length) {
+      this.emitStageEvent(stage.stageId, {
+        stageId: stage.stageId,
+        scope: 'activities',
+        version: stage.version,
+        sourceClientId: sourceContext.userId,
+        sourceConnectionId: sourceContext.connectionId,
+        deleteIds: [...orphanedActivityIds],
+      });
+    }
+    if (timelineChanged) {
+      this.emitTimelineEvent(stage, sourceContext);
     }
 
     return {
@@ -269,6 +484,163 @@ export class PlanningService {
     return seed.map((activity) => this.cloneActivity(activity));
   }
 
+  private createSeedPersonnelServicePools(): PersonnelServicePool[] {
+    const seed: PersonnelServicePool[] = [
+      {
+        id: 'psp-line-haul',
+        name: 'Line Haul Crews',
+        description: 'Teams for long-haul and night operations',
+        serviceIds: ['svc-line-haul', 'svc-night-run'],
+        shiftCoordinator: 'eva.mueller',
+        contactEmail: 'linehaul@planning.local',
+        attributes: { region: 'north' },
+      },
+      {
+        id: 'psp-yard',
+        name: 'Yard Services',
+        description: 'Shunting and yard activities',
+        serviceIds: ['svc-yard-mgmt'],
+        shiftCoordinator: 'markus.schneider',
+        attributes: { coverage: '24/7' },
+      },
+    ];
+    return seed.map((pool) => this.clonePersonnelServicePool(pool));
+  }
+
+  private createSeedPersonnelPools(): PersonnelPool[] {
+    const seed: PersonnelPool[] = [
+      {
+        id: 'pp-maintenance',
+        name: 'Maintenance Crew',
+        description: 'Technicians with electrical focus',
+        personnelIds: ['per-100', 'per-101', 'per-102'],
+        locationCode: 'LOC-MAINT',
+        attributes: { skills: ['assembly', 'inspection'] },
+      },
+      {
+        id: 'pp-shift-b',
+        name: 'Shift Team B',
+        personnelIds: ['per-120', 'per-121'],
+        locationCode: 'LOC-ZONE-B',
+      },
+    ];
+    return seed.map((pool) => this.clonePersonnelPool(pool));
+  }
+
+  private createSeedVehicleServicePools(): VehicleServicePool[] {
+    const seed: VehicleServicePool[] = [
+      {
+        id: 'vsp-last-mile',
+        name: 'Last Mile Deliveries',
+        description: 'City and regional deliveries',
+        serviceIds: ['svc-last-mile', 'svc-city'],
+        dispatcher: 'dispatcher-1',
+        attributes: { region: 'city' },
+      },
+      {
+        id: 'vsp-heavy',
+        name: 'Heavy Transport',
+        serviceIds: ['svc-heavy-haul'],
+        dispatcher: 'dispatcher-heavy',
+        attributes: { maxPayloadTons: 40 },
+      },
+    ];
+    return seed.map((pool) => this.cloneVehicleServicePool(pool));
+  }
+
+  private createSeedVehiclePools(): VehiclePool[] {
+    const seed: VehiclePool[] = [
+      {
+        id: 'vp-urban',
+        name: 'Urban Fleet',
+        description: 'Vehicles stationed at City Depot',
+        vehicleIds: ['veh-001', 'veh-002', 'veh-003'],
+        depotManager: 'lena.schmidt',
+        attributes: { depot: 'City Depot' },
+      },
+      {
+        id: 'vp-long-haul',
+        name: 'Long Haul Fleet',
+        vehicleIds: ['veh-010', 'veh-011'],
+        depotManager: 'stefan.berger',
+        attributes: { depot: 'Hub Nord' },
+      },
+    ];
+    return seed.map((pool) => this.cloneVehiclePool(pool));
+  }
+
+  private createSeedVehicleTypes(): VehicleType[] {
+    const seed: VehicleType[] = [
+      {
+        id: 'vt-tractor',
+        label: 'Heavy Tractor',
+        category: 'heavy',
+        capacity: 40,
+        maxSpeed: 90,
+        maintenanceIntervalDays: 90,
+        energyType: 'diesel',
+        manufacturer: 'MAN',
+        lengthMeters: 7.5,
+        weightTons: 18,
+        brakeType: 'air',
+        brakePercentage: 85,
+        tiltingCapability: 'none',
+        powerSupplySystems: ['15kv-ac'],
+        trainProtectionSystems: ['LZB'],
+        etcsLevel: '2',
+        gaugeProfile: 'G2',
+        maxAxleLoad: 22.5,
+        noiseCategory: 'N2',
+        remarks: 'Standard tractor for long haul',
+        attributes: { emissionClass: 'Euro VI' },
+      },
+      {
+        id: 'vt-van',
+        label: 'City Van',
+        category: 'light',
+        capacity: 2,
+        maxSpeed: 120,
+        maintenanceIntervalDays: 60,
+        energyType: 'electric',
+        manufacturer: 'Mercedes',
+        lengthMeters: 5.2,
+        weightTons: 3.5,
+        tiltingCapability: 'none',
+        powerSupplySystems: [],
+        trainProtectionSystems: [],
+        remarks: 'Used for last mile',
+        attributes: { rangeKm: 220 },
+      },
+    ];
+    return seed.map((type) => this.cloneVehicleType(type));
+  }
+
+  private createSeedVehicleCompositions(): VehicleComposition[] {
+    const seed: VehicleComposition[] = [
+      {
+        id: 'vc-duo',
+        name: 'Duo Combination',
+        entries: [
+          { typeId: 'vt-tractor', quantity: 1 },
+          { typeId: 'vt-van', quantity: 1 },
+        ],
+        turnaroundBuffer: 'PT30M',
+        remark: 'Combines heavy tractor with support van',
+        attributes: { defaultRoute: 'city-connect' },
+      },
+      {
+        id: 'vc-heavy-haul',
+        name: 'Heavy Haul Train',
+        entries: [
+          { typeId: 'vt-tractor', quantity: 2 },
+        ],
+        turnaroundBuffer: 'PT1H',
+        attributes: { escortRequired: true },
+      },
+    ];
+    return seed.map((composition) => this.cloneVehicleComposition(composition));
+  }
+
   private cloneResource(resource: Resource): Resource {
     return {
       ...resource,
@@ -291,7 +663,122 @@ export class PlanningService {
         ? [...activity.assignedQualifications]
         : undefined,
       workRuleTags: activity.workRuleTags ? [...activity.workRuleTags] : undefined,
+      attributes: activity.attributes ? { ...activity.attributes } : undefined,
       meta: activity.meta ? { ...activity.meta } : undefined,
+    };
+  }
+
+  private clonePersonnelServicePool(pool: PersonnelServicePool): PersonnelServicePool {
+    return {
+      ...pool,
+      serviceIds: [...(pool.serviceIds ?? [])],
+      attributes: pool.attributes ? { ...pool.attributes } : undefined,
+    };
+  }
+
+  private clonePersonnelPool(pool: PersonnelPool): PersonnelPool {
+    return {
+      ...pool,
+      personnelIds: [...(pool.personnelIds ?? [])],
+      attributes: pool.attributes ? { ...pool.attributes } : undefined,
+    };
+  }
+
+  private cloneVehicleServicePool(pool: VehicleServicePool): VehicleServicePool {
+    return {
+      ...pool,
+      serviceIds: [...(pool.serviceIds ?? [])],
+      attributes: pool.attributes ? { ...pool.attributes } : undefined,
+    };
+  }
+
+  private cloneVehiclePool(pool: VehiclePool): VehiclePool {
+    return {
+      ...pool,
+      vehicleIds: [...(pool.vehicleIds ?? [])],
+      attributes: pool.attributes ? { ...pool.attributes } : undefined,
+    };
+  }
+
+  private cloneVehicleType(type: VehicleType): VehicleType {
+    return {
+      ...type,
+      powerSupplySystems: type.powerSupplySystems
+        ? [...type.powerSupplySystems]
+        : type.powerSupplySystems,
+      trainProtectionSystems: type.trainProtectionSystems
+        ? [...type.trainProtectionSystems]
+        : type.trainProtectionSystems,
+      attributes: type.attributes ? { ...type.attributes } : undefined,
+    };
+  }
+
+  private cloneVehicleComposition(
+    composition: VehicleComposition,
+  ): VehicleComposition {
+    return {
+      ...composition,
+      entries: (composition.entries ?? []).map((entry) => ({ ...entry })),
+      attributes: composition.attributes ? { ...composition.attributes } : undefined,
+    };
+  }
+
+  private getStageEventSubject(stageId: StageId): Subject<PlanningStageRealtimeEvent> {
+    const existing = this.stageEventSubjects.get(stageId);
+    if (existing) {
+      return existing;
+    }
+    const subject = new Subject<PlanningStageRealtimeEvent>();
+    this.stageEventSubjects.set(stageId, subject);
+    return subject;
+  }
+
+  private emitStageEvent(stageId: StageId, event: PlanningStageRealtimeEvent): void {
+    const subject = this.getStageEventSubject(stageId);
+    subject.next(event);
+  }
+
+  private emitTimelineEvent(stage: StageState, sourceContext?: SourceContext): void {
+    this.emitStageEvent(stage.stageId, this.createTimelineEvent(stage, sourceContext));
+  }
+
+  private createTimelineEvent(
+    stage: StageState,
+    sourceContext?: SourceContext,
+  ): PlanningStageRealtimeEvent {
+    return {
+      stageId: stage.stageId,
+      scope: 'timeline',
+      version: stage.version,
+      sourceClientId: sourceContext?.userId,
+      sourceConnectionId: sourceContext?.connectionId,
+      timelineRange: { ...stage.timelineRange },
+    };
+  }
+
+  private collectResourceSnapshots(stage: StageState, ids: string[]): Resource[] {
+    return ids
+      .map((id) => stage.resources.find((resource) => resource.id === id))
+      .filter((resource): resource is Resource => Boolean(resource))
+      .map((resource) => this.cloneResource(resource));
+  }
+
+  private collectActivitySnapshots(stage: StageState, ids: string[]): Activity[] {
+    return ids
+      .map((id) => stage.activities.find((activity) => activity.id === id))
+      .filter((activity): activity is Activity => Boolean(activity))
+      .map((activity) => this.cloneActivity(activity));
+  }
+
+  private extractSourceContext(clientRequestId?: string): SourceContext {
+    if (!clientRequestId) {
+      return {};
+    }
+    const segments = clientRequestId.split('|');
+    const [userId, connectionId] = segments;
+    return {
+      userId: userId || undefined,
+      connectionId: connectionId || undefined,
     };
   }
 

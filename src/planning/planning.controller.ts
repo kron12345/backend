@@ -1,4 +1,16 @@
-import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  MessageEvent,
+  Param,
+  Post,
+  Put,
+  Query,
+  Sse,
+} from '@nestjs/common';
+import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import type {
   ActivityFilters,
   ActivityMutationRequest,
@@ -58,6 +70,20 @@ export class PlanningController {
     @Body() request?: ActivityValidationRequest,
   ) {
     return this.planningService.validateActivities(stageId, request);
+  }
+
+  @Sse(':stageId/events')
+  streamEvents(
+    @Param('stageId') stageId: string,
+    @Query('clientId') clientId?: string,
+    @Query('userId') userId?: string,
+    @Query('connectionId') connectionId?: string,
+  ): Observable<MessageEvent> {
+    return this.planningService
+      .streamStageEvents(stageId, userId ?? clientId, connectionId)
+      .pipe(
+        map((data) => ({ data })),
+      );
   }
 
   private normalizeResourceIds(
