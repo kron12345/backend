@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { Observable, Subject } from 'rxjs';
 import {
   Activity,
@@ -36,6 +41,7 @@ import {
   STAGE_IDS,
   isStageId,
 } from './planning.types';
+import { PlanningRepository } from './planning.repository';
 
 interface StageState {
   stageId: StageId;
@@ -51,7 +57,8 @@ interface SourceContext {
 }
 
 @Injectable()
-export class PlanningService {
+export class PlanningService implements OnModuleInit {
+  private readonly logger = new Logger(PlanningService.name);
   private readonly stages = new Map<StageId, StageState>();
   private validationIssueCounter = 0;
   private readonly stageEventSubjects = new Map<
@@ -59,17 +66,30 @@ export class PlanningService {
     Subject<PlanningStageRealtimeEvent>
   >();
   private readonly heartbeatIntervalMs = 30000;
-  private personnelServicePools = this.createSeedPersonnelServicePools();
-  private personnelPools = this.createSeedPersonnelPools();
-  private vehicleServicePools = this.createSeedVehicleServicePools();
-  private vehiclePools = this.createSeedVehiclePools();
-  private vehicleTypes = this.createSeedVehicleTypes();
-  private vehicleCompositions = this.createSeedVehicleCompositions();
+  private personnelServicePools: PersonnelServicePool[] = [];
+  private personnelPools: PersonnelPool[] = [];
+  private vehicleServicePools: VehicleServicePool[] = [];
+  private vehiclePools: VehiclePool[] = [];
+  private vehicleTypes: VehicleType[] = [];
+  private vehicleCompositions: VehicleComposition[] = [];
 
-  constructor() {
-    STAGE_IDS.forEach((stageId) => {
-      this.stages.set(stageId, this.createInitialStage(stageId));
-    });
+  private readonly usingDatabase: boolean;
+
+  constructor(private readonly repository: PlanningRepository) {
+    this.usingDatabase = this.repository.isEnabled;
+    if (!this.usingDatabase) {
+      STAGE_IDS.forEach((stageId) => {
+        this.stages.set(stageId, this.createEmptyStage(stageId));
+      });
+    }
+  }
+
+  async onModuleInit(): Promise<void> {
+    if (!this.usingDatabase) {
+      return;
+    }
+    await this.initializeStagesFromDatabase();
+    await this.initializeMasterDataFromDatabase();
   }
 
   getStageSnapshot(stageId: string): PlanningStageSnapshot {
@@ -94,10 +114,10 @@ export class PlanningService {
     return stage.resources.map((resource) => this.cloneResource(resource));
   }
 
-  mutateActivities(
+  async mutateActivities(
     stageId: string,
     request?: ActivityMutationRequest,
-  ): ActivityMutationResponse {
+  ): Promise<ActivityMutationResponse> {
     const stage = this.getStage(stageId);
     const previousTimeline = { ...stage.timelineRange };
     const upserts = request?.upserts ?? [];
@@ -130,6 +150,10 @@ export class PlanningService {
       previousTimeline.start !== stage.timelineRange.start ||
       previousTimeline.end !== stage.timelineRange.end;
 
+    const activitySnapshots = appliedUpserts.length
+      ? this.collectActivitySnapshots(stage, appliedUpserts)
+      : [];
+
     const sourceContext = this.extractSourceContext(request?.clientRequestId);
     if (appliedUpserts.length || deletedIds.length) {
       this.emitStageEvent(stage.stageId, {
@@ -138,14 +162,25 @@ export class PlanningService {
         version: stage.version,
         sourceClientId: sourceContext.userId,
         sourceConnectionId: sourceContext.connectionId,
-        upserts: appliedUpserts.length
-          ? this.collectActivitySnapshots(stage, appliedUpserts)
-          : undefined,
+        upserts: activitySnapshots.length ? activitySnapshots : undefined,
         deleteIds: deletedIds.length ? [...deletedIds] : undefined,
       });
     }
     if (timelineChanged) {
       this.emitTimelineEvent(stage, sourceContext);
+    }
+
+    if (this.usingDatabase) {
+      await this.repository.applyActivityMutations(
+        stage.stageId,
+        activitySnapshots,
+        deletedIds,
+      );
+      await this.repository.updateStageMetadata(
+        stage.stageId,
+        stage.timelineRange,
+        stage.version,
+      );
     }
 
     return {
@@ -163,13 +198,16 @@ export class PlanningService {
     };
   }
 
-  savePersonnelServicePools(
+  async savePersonnelServicePools(
     request?: PersonnelServicePoolListRequest,
-  ): PersonnelServicePoolListResponse {
+  ): Promise<PersonnelServicePoolListResponse> {
     const incoming = request?.items ?? [];
     this.personnelServicePools = incoming.map((pool) =>
       this.clonePersonnelServicePool(pool),
     );
+    if (this.usingDatabase) {
+      await this.repository.replacePersonnelServicePools(this.personnelServicePools);
+    }
     return this.listPersonnelServicePools();
   }
 
@@ -179,11 +217,14 @@ export class PlanningService {
     };
   }
 
-  savePersonnelPools(
+  async savePersonnelPools(
     request?: PersonnelPoolListRequest,
-  ): PersonnelPoolListResponse {
+  ): Promise<PersonnelPoolListResponse> {
     const incoming = request?.items ?? [];
     this.personnelPools = incoming.map((pool) => this.clonePersonnelPool(pool));
+    if (this.usingDatabase) {
+      await this.repository.replacePersonnelPools(this.personnelPools);
+    }
     return this.listPersonnelPools();
   }
 
@@ -195,13 +236,16 @@ export class PlanningService {
     };
   }
 
-  saveVehicleServicePools(
+  async saveVehicleServicePools(
     request?: VehicleServicePoolListRequest,
-  ): VehicleServicePoolListResponse {
+  ): Promise<VehicleServicePoolListResponse> {
     const incoming = request?.items ?? [];
     this.vehicleServicePools = incoming.map((pool) =>
       this.cloneVehicleServicePool(pool),
     );
+    if (this.usingDatabase) {
+      await this.repository.replaceVehicleServicePools(this.vehicleServicePools);
+    }
     return this.listVehicleServicePools();
   }
 
@@ -211,9 +255,14 @@ export class PlanningService {
     };
   }
 
-  saveVehiclePools(request?: VehiclePoolListRequest): VehiclePoolListResponse {
+  async saveVehiclePools(
+    request?: VehiclePoolListRequest,
+  ): Promise<VehiclePoolListResponse> {
     const incoming = request?.items ?? [];
     this.vehiclePools = incoming.map((pool) => this.cloneVehiclePool(pool));
+    if (this.usingDatabase) {
+      await this.repository.replaceVehiclePools(this.vehiclePools);
+    }
     return this.listVehiclePools();
   }
 
@@ -223,9 +272,14 @@ export class PlanningService {
     };
   }
 
-  saveVehicleTypes(request?: VehicleTypeListRequest): VehicleTypeListResponse {
+  async saveVehicleTypes(
+    request?: VehicleTypeListRequest,
+  ): Promise<VehicleTypeListResponse> {
     const incoming = request?.items ?? [];
     this.vehicleTypes = incoming.map((type) => this.cloneVehicleType(type));
+    if (this.usingDatabase) {
+      await this.repository.replaceVehicleTypes(this.vehicleTypes);
+    }
     return this.listVehicleTypes();
   }
 
@@ -237,13 +291,16 @@ export class PlanningService {
     };
   }
 
-  saveVehicleCompositions(
+  async saveVehicleCompositions(
     request?: VehicleCompositionListRequest,
-  ): VehicleCompositionListResponse {
+  ): Promise<VehicleCompositionListResponse> {
     const incoming = request?.items ?? [];
     this.vehicleCompositions = incoming.map((composition) =>
       this.cloneVehicleComposition(composition),
     );
+    if (this.usingDatabase) {
+      await this.repository.replaceVehicleCompositions(this.vehicleCompositions);
+    }
     return this.listVehicleCompositions();
   }
 
@@ -297,10 +354,10 @@ export class PlanningService {
     });
   }
 
-  mutateResources(
+  async mutateResources(
     stageId: string,
     request?: ResourceMutationRequest,
-  ): ResourceMutationResponse {
+  ): Promise<ResourceMutationResponse> {
     const stage = this.getStage(stageId);
     const previousTimeline = { ...stage.timelineRange };
     const upserts = request?.upserts ?? [];
@@ -354,6 +411,10 @@ export class PlanningService {
         previousTimeline.end !== stage.timelineRange.end;
     }
 
+    const resourceSnapshots = appliedUpserts.length
+      ? this.collectResourceSnapshots(stage, appliedUpserts)
+      : [];
+
     const sourceContext = this.extractSourceContext(request?.clientRequestId);
     if (appliedUpserts.length || deletedIds.length) {
       this.emitStageEvent(stage.stageId, {
@@ -362,9 +423,7 @@ export class PlanningService {
         version: stage.version,
         sourceClientId: sourceContext.userId,
         sourceConnectionId: sourceContext.connectionId,
-        upserts: appliedUpserts.length
-          ? this.collectResourceSnapshots(stage, appliedUpserts)
-          : undefined,
+        upserts: resourceSnapshots.length ? resourceSnapshots : undefined,
         deleteIds: deletedIds.length ? [...deletedIds] : undefined,
       });
     }
@@ -382,6 +441,22 @@ export class PlanningService {
       this.emitTimelineEvent(stage, sourceContext);
     }
 
+    if (this.usingDatabase) {
+      await this.repository.applyResourceMutations(
+        stage.stageId,
+        resourceSnapshots,
+        deletedIds,
+      );
+      if (orphanedActivityIds.length) {
+        await this.repository.deleteActivities(stage.stageId, orphanedActivityIds);
+      }
+      await this.repository.updateStageMetadata(
+        stage.stageId,
+        stage.timelineRange,
+        stage.version,
+      );
+    }
+
     return {
       appliedUpserts,
       deletedIds,
@@ -389,256 +464,100 @@ export class PlanningService {
     };
   }
 
-  private createInitialStage(stageId: StageId): StageState {
-    const resources = this.createSeedResources();
-    const activities = this.createSeedActivities(resources);
+  private async initializeStagesFromDatabase(): Promise<void> {
+    for (const stageId of STAGE_IDS) {
+      await this.loadStageFromDatabase(stageId);
+    }
+  }
+
+  private async initializeMasterDataFromDatabase(): Promise<void> {
+    try {
+      const masterData = await this.repository.loadMasterData();
+      this.personnelServicePools = masterData.personnelServicePools.map((pool) =>
+        this.clonePersonnelServicePool(pool),
+      );
+      this.personnelPools = masterData.personnelPools.map((pool) =>
+        this.clonePersonnelPool(pool),
+      );
+      this.vehicleServicePools = masterData.vehicleServicePools.map((pool) =>
+        this.cloneVehicleServicePool(pool),
+      );
+      this.vehiclePools = masterData.vehiclePools.map((pool) =>
+        this.cloneVehiclePool(pool),
+      );
+      this.vehicleTypes = masterData.vehicleTypes.map((type) =>
+        this.cloneVehicleType(type),
+      );
+      this.vehicleCompositions = masterData.vehicleCompositions.map((composition) =>
+        this.cloneVehicleComposition(composition),
+      );
+    } catch (error) {
+      this.logger.error(
+        'Stammdaten konnten nicht aus der Datenbank geladen werden – verwende leere Sammlungen.',
+        (error as Error).stack ?? String(error),
+      );
+      this.personnelServicePools = [];
+      this.personnelPools = [];
+      this.vehicleServicePools = [];
+      this.vehiclePools = [];
+      this.vehicleTypes = [];
+      this.vehicleCompositions = [];
+    }
+  }
+
+  private async loadStageFromDatabase(stageId: StageId): Promise<void> {
+    try {
+      const data = await this.repository.loadStageData(stageId);
+      if (!data) {
+        const emptyStage = this.createEmptyStage(stageId);
+        this.stages.set(stageId, emptyStage);
+        await this.repository.updateStageMetadata(
+          stageId,
+          emptyStage.timelineRange,
+          emptyStage.version,
+        );
+        return;
+      }
+
+      const timelineRange = this.computeTimelineRange(
+        data.activities,
+        data.timelineRange ?? this.defaultTimelineRange(),
+      );
+      const version = data.version ?? this.nextVersion();
+      const stage: StageState = {
+        stageId,
+        resources: data.resources.map((resource) => this.cloneResource(resource)),
+        activities: data.activities.map((activity) => this.cloneActivity(activity)),
+        timelineRange,
+        version,
+      };
+      this.stages.set(stageId, stage);
+
+      if (
+        !data.timelineRange ||
+        data.timelineRange.start !== timelineRange.start ||
+        data.timelineRange.end !== timelineRange.end ||
+        data.version !== version
+      ) {
+        await this.repository.updateStageMetadata(stageId, timelineRange, version);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Stage ${stageId} konnte nicht aus der Datenbank geladen werden – verwende eine leere Stage.`,
+        (error as Error).stack ?? String(error),
+      );
+      this.stages.set(stageId, this.createEmptyStage(stageId));
+    }
+  }
+
+  private createEmptyStage(stageId: StageId): StageState {
     return {
       stageId,
-      resources,
-      activities,
-      timelineRange: this.computeTimelineRange(
-        activities,
-        this.defaultTimelineRange(),
-      ),
+      resources: [],
+      activities: [],
+      timelineRange: this.defaultTimelineRange(),
       version: this.nextVersion(),
     };
-  }
-
-  private createSeedResources(): Resource[] {
-    const base: Resource[] = [
-      {
-        id: 'res-tech-001',
-        name: 'Team Alpha',
-        kind: 'personnel-service',
-        dailyServiceCapacity: 8,
-        attributes: { shift: 'early', skills: ['assembly', 'inspection'] },
-      },
-      {
-        id: 'res-tech-002',
-        name: 'Team Beta',
-        kind: 'personnel-service',
-        dailyServiceCapacity: 8,
-        attributes: { shift: 'late', skills: ['assembly'] },
-      },
-      {
-        id: 'veh-001',
-        name: 'Transporter 1',
-        kind: 'vehicle-service',
-        attributes: { capacityTons: 2.5 },
-      },
-    ];
-    return base.map((resource) => this.cloneResource(resource));
-  }
-
-  private createSeedActivities(resources: Resource[]): Activity[] {
-    const firstResource = resources[0]?.id ?? 'res-tech-001';
-    const secondResource = resources[1]?.id ?? 'res-tech-002';
-    const vehicleResource = resources[2]?.id ?? 'veh-001';
-    const seed: Activity[] = [
-      {
-        id: 'act-1000',
-        resourceId: firstResource,
-        participantResourceIds: [secondResource],
-        title: 'Wareneingang prüfen',
-        start: '2025-03-01T07:30:00.000Z',
-        end: '2025-03-01T09:00:00.000Z',
-        type: 'inspection',
-        locationId: 'loc-inbound',
-        locationLabel: 'Inbound Dock',
-        workRuleTags: ['shift-morning'],
-      },
-      {
-        id: 'act-1001',
-        resourceId: firstResource,
-        title: 'Kommissionierung Auftrag 4711',
-        start: '2025-03-01T09:15:00.000Z',
-        end: '2025-03-01T11:00:00.000Z',
-        type: 'assembly',
-        locationId: 'loc-zone-a',
-        workRuleTags: ['shift-morning'],
-        requiredQualifications: ['assembly-a'],
-      },
-      {
-        id: 'act-1002',
-        resourceId: secondResource,
-        title: 'Ausgang vorbereiten',
-        start: '2025-03-01T08:00:00.000Z',
-        end: '2025-03-01T12:00:00.000Z',
-        type: 'fulfillment',
-        locationId: 'loc-zone-b',
-        workRuleTags: ['shift-day'],
-        requiredQualifications: ['forklift'],
-      },
-      {
-        id: 'act-1003',
-        resourceId: vehicleResource,
-        title: 'Tour Innenstadt',
-        start: '2025-03-01T12:30:00.000Z',
-        end: '2025-03-01T14:00:00.000Z',
-        type: 'transport',
-        from: 'Hub Nord',
-        to: 'City Depot',
-        workRuleTags: ['drive'],
-      },
-    ];
-    return seed.map((activity) => this.cloneActivity(activity));
-  }
-
-  private createSeedPersonnelServicePools(): PersonnelServicePool[] {
-    const seed: PersonnelServicePool[] = [
-      {
-        id: 'psp-line-haul',
-        name: 'Line Haul Crews',
-        description: 'Teams for long-haul and night operations',
-        serviceIds: ['svc-line-haul', 'svc-night-run'],
-        shiftCoordinator: 'eva.mueller',
-        contactEmail: 'linehaul@planning.local',
-        attributes: { region: 'north' },
-      },
-      {
-        id: 'psp-yard',
-        name: 'Yard Services',
-        description: 'Shunting and yard activities',
-        serviceIds: ['svc-yard-mgmt'],
-        shiftCoordinator: 'markus.schneider',
-        attributes: { coverage: '24/7' },
-      },
-    ];
-    return seed.map((pool) => this.clonePersonnelServicePool(pool));
-  }
-
-  private createSeedPersonnelPools(): PersonnelPool[] {
-    const seed: PersonnelPool[] = [
-      {
-        id: 'pp-maintenance',
-        name: 'Maintenance Crew',
-        description: 'Technicians with electrical focus',
-        personnelIds: ['per-100', 'per-101', 'per-102'],
-        locationCode: 'LOC-MAINT',
-        attributes: { skills: ['assembly', 'inspection'] },
-      },
-      {
-        id: 'pp-shift-b',
-        name: 'Shift Team B',
-        personnelIds: ['per-120', 'per-121'],
-        locationCode: 'LOC-ZONE-B',
-      },
-    ];
-    return seed.map((pool) => this.clonePersonnelPool(pool));
-  }
-
-  private createSeedVehicleServicePools(): VehicleServicePool[] {
-    const seed: VehicleServicePool[] = [
-      {
-        id: 'vsp-last-mile',
-        name: 'Last Mile Deliveries',
-        description: 'City and regional deliveries',
-        serviceIds: ['svc-last-mile', 'svc-city'],
-        dispatcher: 'dispatcher-1',
-        attributes: { region: 'city' },
-      },
-      {
-        id: 'vsp-heavy',
-        name: 'Heavy Transport',
-        serviceIds: ['svc-heavy-haul'],
-        dispatcher: 'dispatcher-heavy',
-        attributes: { maxPayloadTons: 40 },
-      },
-    ];
-    return seed.map((pool) => this.cloneVehicleServicePool(pool));
-  }
-
-  private createSeedVehiclePools(): VehiclePool[] {
-    const seed: VehiclePool[] = [
-      {
-        id: 'vp-urban',
-        name: 'Urban Fleet',
-        description: 'Vehicles stationed at City Depot',
-        vehicleIds: ['veh-001', 'veh-002', 'veh-003'],
-        depotManager: 'lena.schmidt',
-        attributes: { depot: 'City Depot' },
-      },
-      {
-        id: 'vp-long-haul',
-        name: 'Long Haul Fleet',
-        vehicleIds: ['veh-010', 'veh-011'],
-        depotManager: 'stefan.berger',
-        attributes: { depot: 'Hub Nord' },
-      },
-    ];
-    return seed.map((pool) => this.cloneVehiclePool(pool));
-  }
-
-  private createSeedVehicleTypes(): VehicleType[] {
-    const seed: VehicleType[] = [
-      {
-        id: 'vt-tractor',
-        label: 'Heavy Tractor',
-        category: 'heavy',
-        capacity: 40,
-        maxSpeed: 90,
-        maintenanceIntervalDays: 90,
-        energyType: 'diesel',
-        manufacturer: 'MAN',
-        lengthMeters: 7.5,
-        weightTons: 18,
-        brakeType: 'air',
-        brakePercentage: 85,
-        tiltingCapability: 'none',
-        powerSupplySystems: ['15kv-ac'],
-        trainProtectionSystems: ['LZB'],
-        etcsLevel: '2',
-        gaugeProfile: 'G2',
-        maxAxleLoad: 22.5,
-        noiseCategory: 'N2',
-        remarks: 'Standard tractor for long haul',
-        attributes: { emissionClass: 'Euro VI' },
-      },
-      {
-        id: 'vt-van',
-        label: 'City Van',
-        category: 'light',
-        capacity: 2,
-        maxSpeed: 120,
-        maintenanceIntervalDays: 60,
-        energyType: 'electric',
-        manufacturer: 'Mercedes',
-        lengthMeters: 5.2,
-        weightTons: 3.5,
-        tiltingCapability: 'none',
-        powerSupplySystems: [],
-        trainProtectionSystems: [],
-        remarks: 'Used for last mile',
-        attributes: { rangeKm: 220 },
-      },
-    ];
-    return seed.map((type) => this.cloneVehicleType(type));
-  }
-
-  private createSeedVehicleCompositions(): VehicleComposition[] {
-    const seed: VehicleComposition[] = [
-      {
-        id: 'vc-duo',
-        name: 'Duo Combination',
-        entries: [
-          { typeId: 'vt-tractor', quantity: 1 },
-          { typeId: 'vt-van', quantity: 1 },
-        ],
-        turnaroundBuffer: 'PT30M',
-        remark: 'Combines heavy tractor with support van',
-        attributes: { defaultRoute: 'city-connect' },
-      },
-      {
-        id: 'vc-heavy-haul',
-        name: 'Heavy Haul Train',
-        entries: [
-          { typeId: 'vt-tractor', quantity: 2 },
-        ],
-        turnaroundBuffer: 'PT1H',
-        attributes: { escortRequired: true },
-      },
-    ];
-    return seed.map((composition) => this.cloneVehicleComposition(composition));
   }
 
   private cloneResource(resource: Resource): Resource {

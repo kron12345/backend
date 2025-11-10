@@ -57,6 +57,18 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Database bootstrap & migrations
+
+The backend can keep your PostgreSQL schema up to date on every start:
+
+- Copy `.env.example` to `.env` (values default to the provided host `192.168.1.2`, database/user/password `trackshiftpro`) or set your own secrets via `DATABASE_URL`.
+- On application bootstrap the `sql/migrations` directory is scanned for `.sql` files ordered by filename and every pending script is executed inside a transaction. Applied migrations (with a checksum) are tracked in the `planning_schema_migration` table so future runs only apply new files.
+- After migrations finished, the planning service loads resources and activities for every stage from PostgreSQL and every mutation (`PUT .../resources`, `PUT .../activities`) is persisted back to the same tables (`planning_resource`, `planning_activity`) in addition to emitting SSE events.
+- All master-data endpoints (`planning/master-data/*`) now write to/read from their respective tables (`personnel_service_pool`, `vehicle_type`, etc.). Ohne Datenbank laufen sie weiterhin nur im Speicher.
+- The sample `sql/migrations/001_create_planning_schema.sql` migration ensures all required planning tables exist. Add new files (e.g. `002_add_vehicle_types.sql`) for future schema updates and they will be picked up automatically.
+- Demo-/Seed-Daten wurden entfernt. Alle Stages, Pools und Aktivitäten starten leer und werden ausschließlich über das Frontend bzw. direkte API-Aufrufe gepflegt.
+- If neither `DATABASE_URL` nor `DB_*` env vars are defined the backend falls back to an in-memory store (still empty) so the server runs, but nothing is persisted.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
