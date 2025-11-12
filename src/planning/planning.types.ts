@@ -25,6 +25,142 @@ export interface Resource {
   attributes?: Record<string, unknown>;
 }
 
+export type PlanWeekResourceKind = 'vehicle-service' | 'personnel-service';
+
+export interface PlanWeekTemplate {
+  id: string;
+  label: string;
+  description?: string | null;
+  baseWeekStartIso: string;
+  variant?: string | null;
+  slices: PlanWeekSlice[];
+  createdAtIso: string;
+  updatedAtIso: string;
+  version: string;
+}
+
+export interface PlanWeekSlice {
+  id: string;
+  templateId: string;
+  label?: string | null;
+  startIso: string;
+  endIso: string;
+}
+
+export interface PlanWeekActivity {
+  id: string;
+  templateId: string;
+  resourceId: string;
+  title: string;
+  startIso: string;
+  endIso: string;
+  type?: string | null;
+  remark?: string | null;
+  attributes?: Record<string, unknown>;
+}
+
+export interface PlanWeekTemplateListResponse {
+  items: PlanWeekTemplate[];
+}
+
+export interface PlanWeekActivityListResponse {
+  items: PlanWeekActivity[];
+}
+
+export type PlanWeekValidityStatus = 'draft' | 'approved' | 'rolled-out';
+
+export interface PlanWeekValidity {
+  id: string;
+  templateId: string;
+  validFromIso: string;
+  validToIso: string;
+  includeWeekNumbers?: number[];
+  excludeWeekNumbers?: number[];
+  status: PlanWeekValidityStatus;
+}
+
+export interface PlanWeekValidityListResponse {
+  items: PlanWeekValidity[];
+}
+
+export interface PlanWeekRolloutRequest {
+  templateId: string;
+  version: string;
+  weekStartIso: string;
+  weekCount: number;
+  skipWeekCodes?: string[];
+}
+
+export interface WeekInstanceSummary {
+  id: string;
+  weekStartIso: string;
+  status: WeekInstanceStatus;
+}
+
+export interface PlanWeekRolloutResponse {
+  createdInstances: WeekInstanceSummary[];
+}
+
+export type WeekInstanceStatus = 'planned' | 'released' | 'in-progress' | 'archived';
+
+export interface ScheduledService {
+  id: string;
+  instanceId: string;
+  sliceId: string;
+  startIso: string;
+  endIso: string;
+  attributes?: Record<string, unknown>;
+}
+
+export type ServiceAssignmentResourceKind = 'vehicle' | 'personnel';
+
+export interface ServiceAssignment {
+  id: string;
+  scheduledServiceId: string;
+  resourceId: string;
+  resourceKind: ServiceAssignmentResourceKind;
+  assignedAtIso: string;
+  assignedBy?: string | null;
+}
+
+export interface WeekInstance {
+  id: string;
+  templateId: string;
+  weekStartIso: string;
+  templateVersion: string;
+  services: ScheduledService[];
+  assignments: ServiceAssignment[];
+  status: WeekInstanceStatus;
+}
+
+export interface WeekInstanceListResponse {
+  items: WeekInstance[];
+}
+
+export type PlanWeekRealtimeScope =
+  | 'template'
+  | 'slice'
+  | 'activity'
+  | 'validity'
+  | 'rollout';
+
+export interface PlanWeekRealtimeEvent {
+  scope: PlanWeekRealtimeScope;
+  templateId?: string | null;
+  upserts?: (
+    | PlanWeekTemplate
+    | PlanWeekSlice
+    | PlanWeekActivity
+    | PlanWeekValidity
+    | WeekInstanceSummary
+  )[];
+  deleteIds?: string[];
+  version?: string | null;
+  sourceClientId?: string | null;
+  sourceConnectionId?: string | null;
+  timestamp?: string | null;
+}
+
 export interface ListPayload<T> {
   items: T[];
 }

@@ -38,18 +38,23 @@ export class MigrationService implements OnModuleInit {
 
     await this.database.withClient(async (client) => {
       await this.ensureMigrationsTable(client);
-      const applied = await this.fetchAppliedMigrations(client);
+      let applied = await this.fetchAppliedMigrations(client);
+      const mismatched = this.detectSchemaMismatches(migrations, applied);
+      if (mismatched.length) {
+        this.logger.warn(
+          `Detected schema mismatches for ${mismatched.join(', ')}. Dropping managed tables for a clean rebuild.`,
+        );
+        await this.resetPlanningSchema(client);
+        await this.ensureMigrationsTable(client);
+        applied = await this.fetchAppliedMigrations(client);
+      }
+
       const pending = migrations.filter((migration) => {
         const checksum = applied.get(migration.filename);
         if (!checksum) {
           return true;
         }
-        if (checksum !== migration.checksum) {
-          throw new Error(
-            `Checksum mismatch for migration ${migration.filename}. A previously applied migration was modified.`,
-          );
-        }
-        return false;
+        return checksum !== migration.checksum;
       });
 
       if (!pending.length) {
@@ -142,5 +147,62 @@ export class MigrationService implements OnModuleInit {
 
   private computeChecksum(content: string): string {
     return createHash('sha256').update(content).digest('hex');
+  }
+
+  private detectSchemaMismatches(
+    migrations: MigrationFile[],
+    applied: Map<string, string>,
+  ): string[] {
+    if (!applied.size) {
+      return [];
+    }
+    const migrationMap = new Map(migrations.map((migration) => [migration.filename, migration]));
+    const mismatches: string[] = [];
+    applied.forEach((checksum, filename) => {
+      const migration = migrationMap.get(filename);
+      if (!migration || migration.checksum !== checksum) {
+        mismatches.push(filename);
+      }
+    });
+    return mismatches;
+  }
+
+  private async resetPlanningSchema(client: PoolClient): Promise<void> {
+    const tables = [
+      'service_assignment',
+      'scheduled_service',
+      'week_instance',
+      'plan_week_validity',
+      'plan_week_activity',
+      'plan_week_slice',
+      'plan_week_service',
+      'plan_week_template',
+      'vehicle_composition_entry',
+      'vehicle_composition',
+      'vehicle_type',
+      'vehicle_pool',
+      'vehicle_service_pool',
+      'personnel_pool',
+      'personnel_service_pool',
+      'planning_activity',
+      'planning_resource',
+      'planning_stage',
+      this.tableName,
+    ];
+
+    await client.query('BEGIN');
+    try {
+      for (const table of tables) {
+        await client.query(`DROP TABLE IF EXISTS ${table} CASCADE`);
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      this.logger.error(
+        'Failed to reset planning schema before applying migrations',
+        (error as Error).stack ?? error,
+      );
+      throw error;
+    }
   }
 }

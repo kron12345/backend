@@ -1,0 +1,920 @@
+schemas:
+  PlanningStageSnapshot:
+    type: object
+    properties:
+      stageId:
+        type: string
+      resources:
+        type: array
+        items:
+          $ref: '#/components/schemas/Resource'
+      activities:
+        type: array
+        items:
+          $ref: '#/components/schemas/Activity'
+      timelineRange:
+        $ref: '#/components/schemas/TimelineRange'
+      version:
+        type: string
+        nullable: true
+    required:
+    - stageId
+    - resources
+    - activities
+    - timelineRange
+  TimelineRange:
+    type: object
+    properties:
+      start:
+        type: string
+        format: date-time
+      end:
+        type: string
+        format: date-time
+    required:
+    - start
+    - end
+  Resource:
+    type: object
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      kind:
+        type: string
+        enum:
+        - personnel-service
+        - vehicle-service
+        - personnel
+        - vehicle
+      dailyServiceCapacity:
+        type: integer
+        minimum: 0
+      attributes:
+        type: object
+        additionalProperties: true
+    required:
+    - id
+    - name
+    - kind
+  Activity:
+    type: object
+    properties:
+      id:
+        type: string
+      resourceId:
+        type: string
+      participantResourceIds:
+        type: array
+        items:
+          type: string
+      clientId:
+        type: string
+        nullable: true
+      title:
+        type: string
+      start:
+        type: string
+        format: date-time
+      end:
+        type: string
+        format: date-time
+        nullable: true
+      type:
+        type: string
+      from:
+        type: string
+        nullable: true
+      to:
+        type: string
+        nullable: true
+      remark:
+        type: string
+        nullable: true
+      serviceId:
+        type: string
+        nullable: true
+      serviceTemplateId:
+        type: string
+        nullable: true
+      serviceDate:
+        type: string
+        nullable: true
+      serviceCategory:
+        type: string
+        nullable: true
+      serviceRole:
+        type: string
+        nullable: true
+      locationId:
+        type: string
+        nullable: true
+      locationLabel:
+        type: string
+        nullable: true
+      capacityGroupId:
+        type: string
+        nullable: true
+      requiredQualifications:
+        type: array
+        items:
+          type: string
+      assignedQualifications:
+        type: array
+        items:
+          type: string
+      workRuleTags:
+        type: array
+        items:
+          type: string
+      attributes:
+        type: object
+        additionalProperties: true
+        description: "Freies Attribut-Bag f\xFCr kundenspezifische Felder."
+      meta:
+        type: object
+        additionalProperties: true
+        description: "Legacy-Feld f\xFCr benutzerdefinierte Daten (bevorzugt `attributes`\
+          \ verwenden)."
+    required:
+    - id
+    - resourceId
+    - title
+    - start
+  PlanningStageRealtimeEvent:
+    type: object
+    description: "Nachricht, die \xFCber den SSE-Stream `/planning/stages/{stageId}/events`\
+      \ gesendet wird."
+    properties:
+      stageId:
+        type: string
+        enum:
+        - base
+        - operations
+        - dispatch
+      scope:
+        type: string
+        enum:
+        - resources
+        - activities
+        - timeline
+      version:
+        type: string
+        nullable: true
+      sourceClientId:
+        type: string
+        nullable: true
+      sourceConnectionId:
+        type: string
+        nullable: true
+      upserts:
+        description: "Ressourcen- oder Aktivit\xE4tsobjekte \u2013 abh\xE4ngig von\
+          \ `scope`."
+        type: array
+        items:
+          oneOf:
+          - $ref: '#/components/schemas/Resource'
+          - $ref: '#/components/schemas/Activity'
+      deleteIds:
+        type: array
+        items:
+          type: string
+      timelineRange:
+        $ref: '#/components/schemas/TimelineRange'
+    required:
+    - stageId
+    - scope
+  ActivityMutationRequest:
+    type: object
+    properties:
+      upserts:
+        type: array
+        items:
+          $ref: '#/components/schemas/Activity'
+      deleteIds:
+        type: array
+        items:
+          type: string
+      clientRequestId:
+        type: string
+    additionalProperties: false
+  ActivityMutationResponse:
+    type: object
+    properties:
+      appliedUpserts:
+        type: array
+        items:
+          type: string
+      deletedIds:
+        type: array
+        items:
+          type: string
+      version:
+        type: string
+        nullable: true
+    required:
+    - appliedUpserts
+    - deletedIds
+  ResourceMutationRequest:
+    type: object
+    properties:
+      upserts:
+        type: array
+        items:
+          $ref: '#/components/schemas/Resource'
+      deleteIds:
+        type: array
+        items:
+          type: string
+      clientRequestId:
+        type: string
+    additionalProperties: false
+  ResourceMutationResponse:
+    type: object
+    properties:
+      appliedUpserts:
+        type: array
+        items:
+          type: string
+      deletedIds:
+        type: array
+        items:
+          type: string
+      version:
+        type: string
+        nullable: true
+    required:
+    - appliedUpserts
+    - deletedIds
+  ActivityValidationRequest:
+    type: object
+    properties:
+      activityIds:
+        type: array
+        items:
+          type: string
+      windowStart:
+        type: string
+        format: date-time
+      windowEnd:
+        type: string
+        format: date-time
+      resourceIds:
+        type: array
+        items:
+          type: string
+      clientRequestId:
+        type: string
+    additionalProperties: false
+  ActivityValidationResponse:
+    type: object
+    properties:
+      generatedAt:
+        type: string
+        format: date-time
+      issues:
+        type: array
+        items:
+          $ref: '#/components/schemas/ActivityValidationIssue'
+    required:
+    - generatedAt
+    - issues
+  ActivityValidationIssue:
+    type: object
+    properties:
+      id:
+        type: string
+      rule:
+        type: string
+        enum:
+        - location-conflict
+        - capacity-conflict
+        - working-time
+        - qualification
+        - custom
+      severity:
+        type: string
+        enum:
+        - info
+        - warning
+        - error
+      message:
+        type: string
+      activityIds:
+        type: array
+        items:
+          type: string
+      meta:
+        type: object
+        additionalProperties: true
+    required:
+    - id
+    - rule
+    - severity
+    - message
+    - activityIds
+  PersonnelServicePool:
+    type: object
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      description:
+        type: string
+        nullable: true
+      serviceIds:
+        type: array
+        items:
+          type: string
+      shiftCoordinator:
+        type: string
+        nullable: true
+      contactEmail:
+        type: string
+        format: email
+        nullable: true
+      attributes:
+        type: object
+        additionalProperties: true
+    required:
+    - id
+    - name
+    - serviceIds
+  PersonnelServicePoolListRequest:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/PersonnelServicePool'
+    required:
+    - items
+  PersonnelPool:
+    type: object
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      description:
+        type: string
+        nullable: true
+      personnelIds:
+        type: array
+        items:
+          type: string
+      locationCode:
+        type: string
+        nullable: true
+      attributes:
+        type: object
+        additionalProperties: true
+    required:
+    - id
+    - name
+    - personnelIds
+  PersonnelPoolListRequest:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/PersonnelPool'
+    required:
+    - items
+  VehicleServicePool:
+    type: object
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      description:
+        type: string
+        nullable: true
+      serviceIds:
+        type: array
+        items:
+          type: string
+      dispatcher:
+        type: string
+        nullable: true
+      attributes:
+        type: object
+        additionalProperties: true
+    required:
+    - id
+    - name
+    - serviceIds
+  VehicleServicePoolListRequest:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/VehicleServicePool'
+    required:
+    - items
+  VehiclePool:
+    type: object
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      description:
+        type: string
+        nullable: true
+      vehicleIds:
+        type: array
+        items:
+          type: string
+      depotManager:
+        type: string
+        nullable: true
+      attributes:
+        type: object
+        additionalProperties: true
+    required:
+    - id
+    - name
+    - vehicleIds
+  VehiclePoolListRequest:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/VehiclePool'
+    required:
+    - items
+  VehicleType:
+    type: object
+    properties:
+      id:
+        type: string
+      label:
+        type: string
+      category:
+        type: string
+        nullable: true
+      capacity:
+        type: integer
+        nullable: true
+      maxSpeed:
+        type: integer
+        nullable: true
+      maintenanceIntervalDays:
+        type: integer
+        nullable: true
+      energyType:
+        type: string
+        nullable: true
+      manufacturer:
+        type: string
+        nullable: true
+      trainTypeCode:
+        type: string
+        nullable: true
+      lengthMeters:
+        type: number
+        format: float
+        nullable: true
+      weightTons:
+        type: number
+        format: float
+        nullable: true
+      brakeType:
+        type: string
+        nullable: true
+      brakePercentage:
+        type: integer
+        nullable: true
+      tiltingCapability:
+        type: string
+        enum:
+        - none
+        - passive
+        - active
+        nullable: true
+      powerSupplySystems:
+        type: array
+        items:
+          type: string
+      trainProtectionSystems:
+        type: array
+        items:
+          type: string
+      etcsLevel:
+        type: string
+        nullable: true
+      gaugeProfile:
+        type: string
+        nullable: true
+      maxAxleLoad:
+        type: number
+        format: float
+        nullable: true
+      noiseCategory:
+        type: string
+        nullable: true
+      remarks:
+        type: string
+        nullable: true
+      attributes:
+        type: object
+        additionalProperties: true
+    required:
+    - id
+    - label
+  VehicleTypeListRequest:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/VehicleType'
+    required:
+    - items
+  VehicleCompositionEntry:
+    type: object
+    properties:
+      typeId:
+        type: string
+      quantity:
+        type: integer
+    required:
+    - typeId
+    - quantity
+  VehicleComposition:
+    type: object
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      entries:
+        type: array
+        items:
+          $ref: '#/components/schemas/VehicleCompositionEntry'
+      turnaroundBuffer:
+        type: string
+        nullable: true
+      remark:
+        type: string
+        nullable: true
+      attributes:
+        type: object
+        additionalProperties: true
+    required:
+    - id
+    - name
+    - entries
+  VehicleCompositionListRequest:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/VehicleComposition'
+    required:
+    - items
+  PlanWeekTemplateListResponse:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/PlanWeekTemplate'
+    required:
+    - items
+  PlanWeekActivityListResponse:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/PlanWeekActivity'
+    required:
+    - items
+  PlanWeekTemplate:
+    type: object
+    properties:
+      id:
+        type: string
+      label:
+        type: string
+      description:
+        type: string
+        nullable: true
+      baseWeekStartIso:
+        type: string
+        format: date
+      variant:
+        type: string
+        nullable: true
+      slices:
+        type: array
+        items:
+          $ref: '#/components/schemas/PlanWeekSlice'
+      createdAtIso:
+        type: string
+        format: date-time
+      updatedAtIso:
+        type: string
+        format: date-time
+      version:
+        type: string
+    required:
+    - id
+    - label
+    - baseWeekStartIso
+    - slices
+    - createdAtIso
+    - updatedAtIso
+    - version
+  PlanWeekSlice:
+    type: object
+    properties:
+      id:
+        type: string
+      templateId:
+        type: string
+      label:
+        type: string
+        nullable: true
+      startIso:
+        type: string
+        format: date
+      endIso:
+        type: string
+        format: date
+    required:
+    - id
+    - templateId
+    - startIso
+    - endIso
+  PlanWeekActivity:
+    type: object
+    properties:
+      id:
+        type: string
+      templateId:
+        type: string
+      resourceId:
+        type: string
+      title:
+        type: string
+      startIso:
+        type: string
+        format: date-time
+      endIso:
+        type: string
+        format: date-time
+      type:
+        type: string
+        nullable: true
+      remark:
+        type: string
+        nullable: true
+      attributes:
+        type: object
+        additionalProperties: true
+    required:
+    - id
+    - templateId
+    - resourceId
+    - title
+    - startIso
+    - endIso
+  PlanWeekValidityListResponse:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/PlanWeekValidity'
+    required:
+    - items
+  PlanWeekValidity:
+    type: object
+    properties:
+      id:
+        type: string
+      templateId:
+        type: string
+      validFromIso:
+        type: string
+        format: date
+      validToIso:
+        type: string
+        format: date
+      includeWeekNumbers:
+        type: array
+        items:
+          type: integer
+      excludeWeekNumbers:
+        type: array
+        items:
+          type: integer
+      status:
+        type: string
+        enum:
+        - draft
+        - approved
+        - rolled-out
+    required:
+    - id
+    - templateId
+    - validFromIso
+    - validToIso
+    - status
+  PlanWeekRolloutRequest:
+    type: object
+    properties:
+      templateId:
+        type: string
+      version:
+        type: string
+      weekStartIso:
+        type: string
+        format: date
+      weekCount:
+        type: integer
+        minimum: 1
+      skipWeekCodes:
+        type: array
+        description: "ISO-Wochenkennungen (z.\u202FB. 2024-W15), die ausgelassen werden\
+          \ sollen."
+        items:
+          type: string
+    required:
+    - templateId
+    - version
+    - weekStartIso
+    - weekCount
+  PlanWeekRolloutResponse:
+    type: object
+    properties:
+      createdInstances:
+        type: array
+        items:
+          $ref: '#/components/schemas/WeekInstanceSummary'
+    required:
+    - createdInstances
+  WeekInstanceListResponse:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/WeekInstance'
+    required:
+    - items
+  WeekInstance:
+    type: object
+    properties:
+      id:
+        type: string
+      templateId:
+        type: string
+      weekStartIso:
+        type: string
+        format: date
+      templateVersion:
+        type: string
+      services:
+        type: array
+        items:
+          $ref: '#/components/schemas/ScheduledService'
+      assignments:
+        type: array
+        items:
+          $ref: '#/components/schemas/ServiceAssignment'
+      status:
+        type: string
+        enum:
+        - planned
+        - released
+        - in-progress
+        - archived
+    required:
+    - id
+    - templateId
+    - weekStartIso
+    - templateVersion
+    - services
+    - assignments
+    - status
+  ScheduledService:
+    type: object
+    properties:
+      id:
+        type: string
+      instanceId:
+        type: string
+      sliceId:
+        type: string
+      startIso:
+        type: string
+        format: date-time
+      endIso:
+        type: string
+        format: date-time
+      attributes:
+        type: object
+        additionalProperties: true
+    required:
+    - id
+    - instanceId
+    - sliceId
+    - startIso
+    - endIso
+  ServiceAssignment:
+    type: object
+    properties:
+      id:
+        type: string
+      scheduledServiceId:
+        type: string
+      resourceId:
+        type: string
+      resourceKind:
+        type: string
+        enum:
+        - vehicle
+        - personnel
+      assignedAtIso:
+        type: string
+        format: date-time
+      assignedBy:
+        type: string
+        nullable: true
+    required:
+    - id
+    - scheduledServiceId
+    - resourceId
+    - resourceKind
+    - assignedAtIso
+  WeekInstanceSummary:
+    type: object
+    properties:
+      id:
+        type: string
+      weekStartIso:
+        type: string
+        format: date
+      status:
+        type: string
+        enum:
+        - planned
+        - released
+        - in-progress
+        - archived
+    required:
+    - id
+    - weekStartIso
+    - status
+    PlanWeekRealtimeEvent:
+      type: object
+    properties:
+      scope:
+        type: string
+        enum:
+        - template
+        - service
+        - validity
+        - rollout
+      templateId:
+        type: string
+        nullable: true
+      upserts:
+        type: array
+        items:
+          oneOf:
+          - $ref: '#/components/schemas/PlanWeekTemplate'
+          - $ref: '#/components/schemas/PlanWeekSlice'
+          - $ref: '#/components/schemas/PlanWeekValidity'
+          - $ref: '#/components/schemas/PlanWeekActivity'
+          - $ref: '#/components/schemas/WeekInstanceSummary'
+      deleteIds:
+        type: array
+        items:
+          type: string
+      version:
+        type: string
+        nullable: true
+      sourceClientId:
+        type: string
+        nullable: true
+      sourceConnectionId:
+        type: string
+        nullable: true
+      timestamp:
+        type: string
+        format: date-time
+        nullable: true
+    required:
+    - scope
