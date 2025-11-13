@@ -396,9 +396,9 @@ export class PlanWeekService {
     payload: PlanWeekActivity,
   ): PlanWeekActivity {
     const start = this.ensureDateTime(payload.startIso, 'startIso');
-    const end = this.ensureDateTime(payload.endIso, 'endIso');
-    if (start >= end) {
-      throw new BadRequestException('startIso must be before endIso.');
+    const end = payload.endIso == null ? undefined : this.ensureDateTime(payload.endIso, 'endIso');
+    if (end && start > end) {
+      throw new BadRequestException('endIso must be on or after startIso.');
     }
     if (!payload.resourceId) {
       throw new BadRequestException('resourceId is required.');
@@ -412,7 +412,7 @@ export class PlanWeekService {
       resourceId: payload.resourceId,
       title: payload.title,
       startIso: start.toISOString(),
-      endIso: end.toISOString(),
+      endIso: end?.toISOString(),
       type: payload.type ?? undefined,
       remark: payload.remark ?? undefined,
       attributes: payload.attributes ?? undefined,

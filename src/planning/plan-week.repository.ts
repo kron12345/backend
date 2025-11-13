@@ -37,7 +37,7 @@ interface PlanWeekActivityRow {
   resource_id: string;
   title: string;
   start_at: Date;
-  end_at: Date;
+  end_at: Date | null;
   type: string | null;
   remark: string | null;
   attributes: Record<string, unknown> | null;
@@ -313,7 +313,7 @@ export class PlanWeekRepository {
         activity.resourceId,
         activity.title,
         new Date(activity.startIso),
-        new Date(activity.endIso),
+        activity.endIso ? new Date(activity.endIso) : null,
         activity.type ?? null,
         activity.remark ?? null,
         activity.attributes ?? null,
@@ -730,7 +730,7 @@ export class PlanWeekRepository {
       resourceId: row.resource_id,
       title: row.title,
       startIso: row.start_at.toISOString(),
-      endIso: row.end_at.toISOString(),
+      endIso: row.end_at?.toISOString(),
       type: row.type ?? undefined,
       remark: row.remark ?? undefined,
       attributes: row.attributes ?? undefined,

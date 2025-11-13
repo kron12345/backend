@@ -53,7 +53,7 @@ export interface PlanWeekActivity {
   resourceId: string;
   title: string;
   startIso: string;
-  endIso: string;
+  endIso?: string | null;
   type?: string | null;
   remark?: string | null;
   attributes?: Record<string, unknown>;
