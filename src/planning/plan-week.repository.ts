@@ -34,13 +34,13 @@ interface PlanWeekSliceRow {
 interface PlanWeekActivityRow {
   id: string;
   template_id: string;
-  resource_id: string;
   title: string;
   start_at: Date;
   end_at: Date | null;
   type: string | null;
   remark: string | null;
   attributes: Record<string, unknown> | null;
+  participants: { resourceId: string; role?: string | null }[] | null;
 }
 
 interface PlanWeekValidityRow {
@@ -267,7 +267,16 @@ export class PlanWeekRepository {
     }
     const result = await this.database.query<PlanWeekActivityRow>(
       `
-        SELECT id, template_id, resource_id, title, start_at, end_at, type, remark, attributes
+        SELECT
+          id,
+          template_id,
+          title,
+          start_at,
+          end_at,
+          type,
+          remark,
+          attributes,
+          participants
         FROM plan_week_activity
         WHERE template_id = $1
         ORDER BY start_at, id
@@ -286,37 +295,46 @@ export class PlanWeekRepository {
         INSERT INTO plan_week_activity (
           id,
           template_id,
-          resource_id,
           title,
           start_at,
           end_at,
           type,
           remark,
-          attributes
+          attributes,
+          participants
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         ON CONFLICT (id) DO UPDATE SET
           template_id = EXCLUDED.template_id,
-          resource_id = EXCLUDED.resource_id,
           title = EXCLUDED.title,
           start_at = EXCLUDED.start_at,
           end_at = EXCLUDED.end_at,
           type = EXCLUDED.type,
           remark = EXCLUDED.remark,
           attributes = EXCLUDED.attributes,
+          participants = EXCLUDED.participants,
           updated_at = now()
-        RETURNING id, template_id, resource_id, title, start_at, end_at, type, remark, attributes
+        RETURNING
+          id,
+          template_id,
+          title,
+          start_at,
+          end_at,
+          type,
+          remark,
+          attributes,
+          participants
       `,
       [
         activity.id,
         activity.templateId,
-        activity.resourceId,
         activity.title,
         new Date(activity.startIso),
         activity.endIso ? new Date(activity.endIso) : null,
         activity.type ?? null,
         activity.remark ?? null,
         activity.attributes ?? null,
+        JSON.stringify(activity.participants ?? []),
       ],
     );
     return this.mapActivity(result.rows[0]);
@@ -727,13 +745,17 @@ export class PlanWeekRepository {
     return {
       id: row.id,
       templateId: row.template_id,
-      resourceId: row.resource_id,
       title: row.title,
       startIso: row.start_at.toISOString(),
       endIso: row.end_at?.toISOString(),
       type: row.type ?? undefined,
       remark: row.remark ?? undefined,
       attributes: row.attributes ?? undefined,
+      participants:
+        row.participants?.map((participant) => ({
+          resourceId: participant.resourceId,
+          role: participant.role ?? undefined,
+        })) ?? [],
     };
   }
 

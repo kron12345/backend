@@ -120,7 +120,7 @@ export class PlanWeekService {
     await this.getTemplateOrThrow(templateId);
     const normalized = this.normalizeActivity(templateId, activityId, payload);
     const saved = await this.repository.upsertTemplateActivity(normalized);
-    this.emitEvent('activity', templateId, { upserts: [saved] });
+    this.emitEvent('service', templateId, { upserts: [saved] });
     return saved;
   }
 
@@ -138,7 +138,7 @@ export class PlanWeekService {
         `Activity ${activityId} does not exist for template ${templateId}.`,
       );
     }
-    this.emitEvent('activity', templateId, { deleteIds: [activityId] });
+    this.emitEvent('service', templateId, { deleteIds: [activityId] });
   }
 
   async rolloutTemplate(
@@ -400,22 +400,25 @@ export class PlanWeekService {
     if (end && start > end) {
       throw new BadRequestException('endIso must be on or after startIso.');
     }
-    if (!payload.resourceId) {
-      throw new BadRequestException('resourceId is required.');
-    }
     if (!payload.title) {
       throw new BadRequestException('title is required.');
+    }
+    if (!payload.participants || payload.participants.length === 0) {
+      throw new BadRequestException('participants must contain at least one entry.');
     }
     return {
       id: activityId,
       templateId,
-      resourceId: payload.resourceId,
       title: payload.title,
       startIso: start.toISOString(),
       endIso: end?.toISOString(),
       type: payload.type ?? undefined,
       remark: payload.remark ?? undefined,
       attributes: payload.attributes ?? undefined,
+      participants: payload.participants.map((participant) => ({
+        resourceId: participant.resourceId,
+        role: participant.role ?? undefined,
+      })),
     };
   }
 

@@ -169,13 +169,14 @@ export class MigrationService implements OnModuleInit {
 
   private async resetPlanningSchema(client: PoolClient): Promise<void> {
     const tables = [
+      'train_segment',
+      'train_run',
       'service_assignment',
       'scheduled_service',
       'week_instance',
       'plan_week_validity',
       'plan_week_activity',
       'plan_week_slice',
-      'plan_week_service',
       'plan_week_template',
       'vehicle_composition_entry',
       'vehicle_composition',

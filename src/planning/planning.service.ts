@@ -40,6 +40,8 @@ import {
   TimelineRange,
   STAGE_IDS,
   isStageId,
+  TrainRun,
+  TrainSegment,
 } from './planning.types';
 import { PlanningRepository } from './planning.repository';
 
@@ -47,6 +49,8 @@ interface StageState {
   stageId: StageId;
   resources: Resource[];
   activities: Activity[];
+  trainRuns: TrainRun[];
+  trainSegments: TrainSegment[];
   timelineRange: TimelineRange;
   version: string | null;
 }
@@ -98,6 +102,10 @@ export class PlanningService implements OnModuleInit {
       stageId: stage.stageId,
       resources: stage.resources.map((resource) => this.cloneResource(resource)),
       activities: stage.activities.map((activity) => this.cloneActivity(activity)),
+      trainRuns: stage.trainRuns.map((run) => this.cloneTrainRun(run)),
+      trainSegments: stage.trainSegments.map((segment) =>
+        this.cloneTrainSegment(segment),
+      ),
       timelineRange: { ...stage.timelineRange },
       version: stage.version,
     };
@@ -191,11 +199,9 @@ export class PlanningService implements OnModuleInit {
   }
 
   listPersonnelServicePools(): PersonnelServicePoolListResponse {
-    return {
-      items: this.personnelServicePools.map((pool) =>
-        this.clonePersonnelServicePool(pool),
-      ),
-    };
+    return this.personnelServicePools.map((pool) =>
+      this.clonePersonnelServicePool(pool),
+    );
   }
 
   async savePersonnelServicePools(
@@ -212,9 +218,7 @@ export class PlanningService implements OnModuleInit {
   }
 
   listPersonnelPools(): PersonnelPoolListResponse {
-    return {
-      items: this.personnelPools.map((pool) => this.clonePersonnelPool(pool)),
-    };
+    return this.personnelPools.map((pool) => this.clonePersonnelPool(pool));
   }
 
   async savePersonnelPools(
@@ -229,11 +233,9 @@ export class PlanningService implements OnModuleInit {
   }
 
   listVehicleServicePools(): VehicleServicePoolListResponse {
-    return {
-      items: this.vehicleServicePools.map((pool) =>
-        this.cloneVehicleServicePool(pool),
-      ),
-    };
+    return this.vehicleServicePools.map((pool) =>
+      this.cloneVehicleServicePool(pool),
+    );
   }
 
   async saveVehicleServicePools(
@@ -250,9 +252,7 @@ export class PlanningService implements OnModuleInit {
   }
 
   listVehiclePools(): VehiclePoolListResponse {
-    return {
-      items: this.vehiclePools.map((pool) => this.cloneVehiclePool(pool)),
-    };
+    return this.vehiclePools.map((pool) => this.cloneVehiclePool(pool));
   }
 
   async saveVehiclePools(
@@ -267,9 +267,7 @@ export class PlanningService implements OnModuleInit {
   }
 
   listVehicleTypes(): VehicleTypeListResponse {
-    return {
-      items: this.vehicleTypes.map((type) => this.cloneVehicleType(type)),
-    };
+    return this.vehicleTypes.map((type) => this.cloneVehicleType(type));
   }
 
   async saveVehicleTypes(
@@ -284,11 +282,9 @@ export class PlanningService implements OnModuleInit {
   }
 
   listVehicleCompositions(): VehicleCompositionListResponse {
-    return {
-      items: this.vehicleCompositions.map((composition) =>
-        this.cloneVehicleComposition(composition),
-      ),
-    };
+    return this.vehicleCompositions.map((composition) =>
+      this.cloneVehicleComposition(composition),
+    );
   }
 
   async saveVehicleCompositions(
@@ -389,7 +385,11 @@ export class PlanningService implements OnModuleInit {
       // Drop Aktivitäten ohne gültige Ressource, damit der Snapshot konsistent bleibt.
       stage.activities = stage.activities.filter(
         (activity) => {
-          if (deletedSet.has(activity.resourceId)) {
+          const participants = activity.participants ?? [];
+          if (
+            participants.length > 0 &&
+            participants.every((participant) => deletedSet.has(participant.resourceId))
+          ) {
             orphanedActivityIds.push(activity.id);
             return false;
           }
@@ -528,6 +528,10 @@ export class PlanningService implements OnModuleInit {
         stageId,
         resources: data.resources.map((resource) => this.cloneResource(resource)),
         activities: data.activities.map((activity) => this.cloneActivity(activity)),
+        trainRuns: data.trainRuns.map((run) => this.cloneTrainRun(run)),
+        trainSegments: data.trainSegments.map((segment) =>
+          this.cloneTrainSegment(segment),
+        ),
         timelineRange,
         version,
       };
@@ -555,6 +559,8 @@ export class PlanningService implements OnModuleInit {
       stageId,
       resources: [],
       activities: [],
+      trainRuns: [],
+      trainSegments: [],
       timelineRange: this.defaultTimelineRange(),
       version: this.nextVersion(),
     };
@@ -572,9 +578,6 @@ export class PlanningService implements OnModuleInit {
   private cloneActivity(activity: Activity): Activity {
     return {
       ...activity,
-      participantResourceIds: activity.participantResourceIds
-        ? [...activity.participantResourceIds]
-        : undefined,
       requiredQualifications: activity.requiredQualifications
         ? [...activity.requiredQualifications]
         : undefined,
@@ -582,8 +585,25 @@ export class PlanningService implements OnModuleInit {
         ? [...activity.assignedQualifications]
         : undefined,
       workRuleTags: activity.workRuleTags ? [...activity.workRuleTags] : undefined,
+      participants: activity.participants
+        ? activity.participants.map((participant) => ({ ...participant }))
+        : undefined,
       attributes: activity.attributes ? { ...activity.attributes } : undefined,
       meta: activity.meta ? { ...activity.meta } : undefined,
+    };
+  }
+
+  private cloneTrainRun(run: TrainRun): TrainRun {
+    return {
+      ...run,
+      attributes: run.attributes ? { ...run.attributes } : undefined,
+    };
+  }
+
+  private cloneTrainSegment(segment: TrainSegment): TrainSegment {
+    return {
+      ...segment,
+      attributes: segment.attributes ? { ...segment.attributes } : undefined,
     };
   }
 
@@ -723,8 +743,14 @@ export class PlanningService implements OnModuleInit {
       : undefined;
 
     return activities.filter((activity) => {
-      if (resourceFilter && !resourceFilter.has(activity.resourceId)) {
-        return false;
+      if (resourceFilter) {
+        const participants = activity.participants ?? [];
+        const matchesResource = participants.some((participant) =>
+          resourceFilter.has(participant.resourceId),
+        );
+        if (!matchesResource) {
+          return false;
+        }
       }
 
       const startMs = this.parseIso(activity.start);
@@ -767,9 +793,12 @@ export class PlanningService implements OnModuleInit {
   private detectOverlapIssues(activities: Activity[]): ActivityValidationIssue[] {
     const byResource = new Map<string, Activity[]>();
     activities.forEach((activity) => {
-      const collection = byResource.get(activity.resourceId) ?? [];
-      collection.push(activity);
-      byResource.set(activity.resourceId, collection);
+      const participants = activity.participants ?? [];
+      participants.forEach((participant) => {
+        const collection = byResource.get(participant.resourceId) ?? [];
+        collection.push(activity);
+        byResource.set(participant.resourceId, collection);
+      });
     });
 
     const issues: ActivityValidationIssue[] = [];

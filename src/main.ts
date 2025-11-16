@@ -1,10 +1,13 @@
 import 'dotenv/config';
+import { readFileSync } from 'fs';
+import * as path from 'path';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
 import { ValidationPipe } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { OpenAPIObject, SwaggerModule } from '@nestjs/swagger';
 import fastifySse from 'fastify-sse-v2';
+import yaml from 'js-yaml';
 
 async function bootstrap() {
   const fastifyAdapter = new FastifyAdapter();
@@ -38,12 +41,14 @@ async function bootstrap() {
   });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
-  const config = new DocumentBuilder()
-    .setTitle('Planning API')
-    .setVersion('1.0.0')
-    .build();
-  const doc = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('/api/docs', app, doc);
+  const openApiPath = path.join(
+    process.cwd(),
+    'openapi',
+    'planning-activities.yaml',
+  );
+  const openApiRaw = readFileSync(openApiPath, 'utf8');
+  const openApiDocument = yaml.load(openApiRaw) as OpenAPIObject;
+  SwaggerModule.setup('/api/docs', app, openApiDocument);
 
   await app.listen(3000, '0.0.0.0');
 }

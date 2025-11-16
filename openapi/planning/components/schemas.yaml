@@ -12,6 +12,14 @@ schemas:
         type: array
         items:
           $ref: '#/components/schemas/Activity'
+      trainRuns:
+        type: array
+        items:
+          $ref: '#/components/schemas/TrainRun'
+      trainSegments:
+        type: array
+        items:
+          $ref: '#/components/schemas/TrainSegment'
       timelineRange:
         $ref: '#/components/schemas/TimelineRange'
       version:
@@ -63,12 +71,6 @@ schemas:
     properties:
       id:
         type: string
-      resourceId:
-        type: string
-      participantResourceIds:
-        type: array
-        items:
-          type: string
       clientId:
         type: string
         nullable: true
@@ -128,6 +130,54 @@ schemas:
         type: array
         items:
           type: string
+      rowVersion:
+        type: string
+        nullable: true
+        description: "Optionale Row-Version f\xFCr Optimistic Locking."
+      createdAt:
+        type: string
+        format: date-time
+        nullable: true
+      createdBy:
+        type: string
+        nullable: true
+      updatedAt:
+        type: string
+        format: date-time
+        nullable: true
+      updatedBy:
+        type: string
+        nullable: true
+      scope:
+        type: string
+        description: "Fachlicher Geltungsbereich der Aktivit\xE4t."
+        enum:
+        - personnel-only
+        - vehicle-only
+        - mixed
+      participants:
+        type: array
+        description: "Teilnehmende Ressourcen mit Typ und optionaler Rolle."
+        items:
+          $ref: '#/components/schemas/ActivityParticipant'
+      groupId:
+        type: string
+        nullable: true
+        description: "Optionale Gruppierung (z. B. Vor-/Nachleistungsgruppe)."
+      groupOrder:
+        type: integer
+        format: int32
+        nullable: true
+        description: "Reihenfolge innerhalb der Gruppe (aufsteigend)."
+      trainRunId:
+        type: string
+        nullable: true
+        description: "Optionaler Verweis auf den zugeh\xF6rigen Zuglauf."
+      trainSegmentIds:
+        type: array
+        description: "Optional Liste der abgedeckten Zugabschnitte."
+        items:
+          type: string
       attributes:
         type: object
         additionalProperties: true
@@ -139,7 +189,6 @@ schemas:
           \ verwenden)."
     required:
     - id
-    - resourceId
     - title
     - start
   PlanningStageRealtimeEvent:
@@ -267,6 +316,60 @@ schemas:
       clientRequestId:
         type: string
     additionalProperties: false
+  ActivityParticipant:
+    type: object
+    description: "Teilnehmende Ressource einer Aktivit\xE4t."
+    properties:
+      resourceId:
+        type: string
+      kind:
+        type: string
+        enum:
+        - personnel-service
+        - vehicle-service
+        - personnel
+        - vehicle
+      role:
+        type: string
+        nullable: true
+        description: "Optionale fachliche Rolle, z. B. primary-personnel, teacher, student."
+    required:
+    - resourceId
+    - kind
+  ActivityGroup:
+    type: object
+    description: "Gruppe von Aktivit\xE4ten, z. B. Vor- oder Nachleistungsgruppe."
+    properties:
+      id:
+        type: string
+      label:
+        type: string
+      description:
+        type: string
+        nullable: true
+      scope:
+        type: string
+        enum:
+        - personnel-only
+        - vehicle-only
+        - mixed
+      role:
+        type: string
+        description: "Funktion der Gruppe relativ zu einer Hauptleistung."
+        enum:
+        - pre
+        - main
+        - post
+        - independent
+      attachedToActivityId:
+        type: string
+        nullable: true
+        description: "Optionale Hauptaktivit\xE4t, an die diese Gruppe angeh\xE4ngt ist."
+    required:
+    - id
+    - label
+    - scope
+    - role
   ActivityValidationResponse:
     type: object
     properties:
@@ -309,11 +412,69 @@ schemas:
         type: object
         additionalProperties: true
     required:
-    - id
-    - rule
-    - severity
-    - message
-    - activityIds
+	    - id
+	    - rule
+	    - severity
+	    - message
+	    - activityIds
+	  TrainRun:
+	    type: object
+	    description: "Geplanter Zuglauf (Fahrplanperspektive)."
+	    properties:
+	      id:
+	        type: string
+	      trainNumber:
+	        type: string
+	      timetableId:
+	        type: string
+	        nullable: true
+	      attributes:
+	        type: object
+	        additionalProperties: true
+	        description: "Freies Attribut-Bag f\xFCr fahrplanspezifische Daten."
+	    required:
+	    - id
+	    - trainNumber
+	  TrainSegment:
+	    type: object
+	    description: "Abschnitt eines Zuglaufes zwischen zwei Betriebsstellen."
+	    properties:
+	      id:
+	        type: string
+	      trainRunId:
+	        type: string
+	      sectionIndex:
+	        type: integer
+	        format: int32
+	      startTime:
+	        type: string
+	        format: date-time
+	      endTime:
+	        type: string
+	        format: date-time
+	      fromLocationId:
+	        type: string
+	      toLocationId:
+	        type: string
+	      pathId:
+	        type: string
+	        nullable: true
+	      distanceKm:
+	        type: number
+	        format: float
+	        nullable: true
+	      attributes:
+	        type: object
+	        additionalProperties: true
+	        description: "Freies Attribut-Bag f\xFCr zus\xE4tzliche Segmentinformationen."
+	    required:
+	    - id
+	    - trainRunId
+	    - sectionIndex
+	    - startTime
+	    - endTime
+	    - fromLocationId
+	    - toLocationId
   PersonnelServicePool:
     type: object
     properties:
@@ -656,14 +817,23 @@ schemas:
     - templateId
     - startIso
     - endIso
+  PlanWeekActivityParticipant:
+    type: object
+    properties:
+      resourceId:
+        type: string
+      role:
+        type: string
+        nullable: true
+        description: "Optionale Rolle (z. B. primary-personnel, secondary-vehicle)."
+    required:
+    - resourceId
   PlanWeekActivity:
     type: object
     properties:
       id:
         type: string
       templateId:
-        type: string
-      resourceId:
         type: string
       title:
         type: string
@@ -682,13 +852,19 @@ schemas:
       attributes:
         type: object
         additionalProperties: true
+      participants:
+        type: array
+        minItems: 1
+        description: "Ressourcen, die dieser Vorlage-Aktivit\xE4t zugeordnet sind."
+        items:
+          $ref: '#/components/schemas/PlanWeekActivityParticipant'
     required:
     - id
     - templateId
-    - resourceId
     - title
     - startIso
     - endIso
+    - participants
   PlanWeekValidityListResponse:
     type: object
     properties:

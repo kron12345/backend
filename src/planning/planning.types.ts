@@ -17,6 +17,8 @@ export type ResourceKind =
   | 'personnel'
   | 'vehicle';
 
+export type ActivityScope = 'personnel-only' | 'vehicle-only' | 'mixed';
+
 export interface Resource {
   id: string;
   name: string;
@@ -50,13 +52,18 @@ export interface PlanWeekSlice {
 export interface PlanWeekActivity {
   id: string;
   templateId: string;
-  resourceId: string;
   title: string;
   startIso: string;
   endIso?: string | null;
   type?: string | null;
   remark?: string | null;
   attributes?: Record<string, unknown>;
+  participants: PlanWeekActivityParticipant[];
+}
+
+export interface PlanWeekActivityParticipant {
+  resourceId: string;
+  role?: string | null;
 }
 
 export interface PlanWeekTemplateListResponse {
@@ -139,8 +146,7 @@ export interface WeekInstanceListResponse {
 
 export type PlanWeekRealtimeScope =
   | 'template'
-  | 'slice'
-  | 'activity'
+  | 'service'
   | 'validity'
   | 'rollout';
 
@@ -176,7 +182,7 @@ export interface PersonnelServicePool {
 }
 
 export type PersonnelServicePoolListRequest = ListPayload<PersonnelServicePool>;
-export type PersonnelServicePoolListResponse = ListPayload<PersonnelServicePool>;
+export type PersonnelServicePoolListResponse = PersonnelServicePool[];
 
 export interface PersonnelPool {
   id: string;
@@ -188,7 +194,7 @@ export interface PersonnelPool {
 }
 
 export type PersonnelPoolListRequest = ListPayload<PersonnelPool>;
-export type PersonnelPoolListResponse = ListPayload<PersonnelPool>;
+export type PersonnelPoolListResponse = PersonnelPool[];
 
 export interface VehicleServicePool {
   id: string;
@@ -200,7 +206,7 @@ export interface VehicleServicePool {
 }
 
 export type VehicleServicePoolListRequest = ListPayload<VehicleServicePool>;
-export type VehicleServicePoolListResponse = ListPayload<VehicleServicePool>;
+export type VehicleServicePoolListResponse = VehicleServicePool[];
 
 export interface VehiclePool {
   id: string;
@@ -212,7 +218,7 @@ export interface VehiclePool {
 }
 
 export type VehiclePoolListRequest = ListPayload<VehiclePool>;
-export type VehiclePoolListResponse = ListPayload<VehiclePool>;
+export type VehiclePoolListResponse = VehiclePool[];
 
 export interface VehicleType {
   id: string;
@@ -240,7 +246,7 @@ export interface VehicleType {
 }
 
 export type VehicleTypeListRequest = ListPayload<VehicleType>;
-export type VehicleTypeListResponse = ListPayload<VehicleType>;
+export type VehicleTypeListResponse = VehicleType[];
 
 export interface VehicleCompositionEntry {
   typeId: string;
@@ -257,7 +263,7 @@ export interface VehicleComposition {
 }
 
 export type VehicleCompositionListRequest = ListPayload<VehicleComposition>;
-export type VehicleCompositionListResponse = ListPayload<VehicleComposition>;
+export type VehicleCompositionListResponse = VehicleComposition[];
 
 export type PlanningStageRealtimeScope = 'resources' | 'activities' | 'timeline';
 
@@ -272,10 +278,34 @@ export interface PlanningStageRealtimeEvent {
   timelineRange?: TimelineRange;
 }
 
+export interface ActivityParticipant {
+  resourceId: string;
+  kind: ResourceKind;
+  role?: string | null;
+}
+
+export interface TrainRun {
+  id: string;
+  trainNumber: string;
+  timetableId?: string | null;
+  attributes?: Record<string, unknown>;
+}
+
+export interface TrainSegment {
+  id: string;
+  trainRunId: string;
+  sectionIndex: number;
+  startTime: string;
+  endTime: string;
+  fromLocationId: string;
+  toLocationId: string;
+  pathId?: string | null;
+  distanceKm?: number | null;
+  attributes?: Record<string, unknown>;
+}
+
 export interface Activity {
   id: string;
-  resourceId: string;
-  participantResourceIds?: string[];
   clientId?: string | null;
   title: string;
   start: string;
@@ -295,6 +325,17 @@ export interface Activity {
   requiredQualifications?: string[];
   assignedQualifications?: string[];
   workRuleTags?: string[];
+  rowVersion?: string | null;
+  createdAt?: string | null;
+  createdBy?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+  scope?: ActivityScope | null;
+  participants?: ActivityParticipant[];
+  groupId?: string | null;
+  groupOrder?: number | null;
+  trainRunId?: string | null;
+  trainSegmentIds?: string[];
   attributes?: Record<string, unknown>;
   meta?: Record<string, unknown>;
 }
@@ -303,6 +344,8 @@ export interface PlanningStageSnapshot {
   stageId: StageId;
   resources: Resource[];
   activities: Activity[];
+  trainRuns?: TrainRun[];
+  trainSegments?: TrainSegment[];
   timelineRange: TimelineRange;
   version?: string | null;
 }

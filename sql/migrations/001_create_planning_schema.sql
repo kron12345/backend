@@ -33,8 +33,6 @@ CREATE INDEX IF NOT EXISTS idx_planning_resource_stage
 CREATE TABLE IF NOT EXISTS planning_activity (
   id TEXT PRIMARY KEY,
   stage_id TEXT NOT NULL REFERENCES planning_stage(stage_id) ON DELETE CASCADE,
-  resource_id TEXT NOT NULL REFERENCES planning_resource(id) ON DELETE CASCADE,
-  participant_resource_ids TEXT[],
   client_id TEXT,
   title TEXT NOT NULL,
   start TIMESTAMPTZ NOT NULL,
@@ -54,16 +52,23 @@ CREATE TABLE IF NOT EXISTS planning_activity (
   required_qualifications TEXT[],
   assigned_qualifications TEXT[],
   work_rule_tags TEXT[],
+  row_version TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by TEXT,
+  scope TEXT,
+  participants JSONB,
+  group_id TEXT,
+  group_order INTEGER,
+  train_run_id TEXT,
+  train_segment_ids TEXT[],
   attributes JSONB,
-  meta JSONB,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  meta JSONB
 );
 
 CREATE INDEX IF NOT EXISTS idx_planning_activity_stage
   ON planning_activity(stage_id);
-
-CREATE INDEX IF NOT EXISTS idx_planning_activity_resource
-  ON planning_activity(resource_id);
 
 CREATE TABLE IF NOT EXISTS personnel_service_pool (
   id TEXT PRIMARY KEY,
@@ -147,3 +152,33 @@ CREATE TABLE IF NOT EXISTS vehicle_composition_entry (
   quantity INTEGER NOT NULL,
   PRIMARY KEY (composition_id, type_id)
 );
+
+CREATE TABLE IF NOT EXISTS train_run (
+  id TEXT PRIMARY KEY,
+  stage_id TEXT NOT NULL REFERENCES planning_stage(stage_id) ON DELETE CASCADE,
+  train_number TEXT NOT NULL,
+  timetable_id TEXT,
+  attributes JSONB,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS train_segment (
+  id TEXT PRIMARY KEY,
+  stage_id TEXT NOT NULL REFERENCES planning_stage(stage_id) ON DELETE CASCADE,
+  train_run_id TEXT NOT NULL REFERENCES train_run(id) ON DELETE CASCADE,
+  section_index INTEGER NOT NULL,
+  start_time TIMESTAMPTZ NOT NULL,
+  end_time TIMESTAMPTZ NOT NULL,
+  from_location_id TEXT NOT NULL,
+  to_location_id TEXT NOT NULL,
+  path_id TEXT,
+  distance_km NUMERIC,
+  attributes JSONB,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_train_segment_stage
+  ON train_segment(stage_id);
+
+CREATE INDEX IF NOT EXISTS idx_train_segment_train_run
+  ON train_segment(train_run_id);

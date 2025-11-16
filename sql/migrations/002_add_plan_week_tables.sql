@@ -38,13 +38,13 @@ CREATE INDEX IF NOT EXISTS idx_plan_week_validity_template
 CREATE TABLE IF NOT EXISTS plan_week_activity (
   id TEXT PRIMARY KEY,
   template_id TEXT NOT NULL REFERENCES plan_week_template(id) ON DELETE CASCADE,
-  resource_id TEXT NOT NULL,
   title TEXT NOT NULL,
   start_at TIMESTAMPTZ NOT NULL,
   end_at TIMESTAMPTZ NOT NULL,
   type TEXT,
   remark TEXT,
   attributes JSONB,
+  participants JSONB,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

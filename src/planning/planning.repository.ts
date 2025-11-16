@@ -7,6 +7,8 @@ import {
   Resource,
   StageId,
   TimelineRange,
+  TrainRun,
+  TrainSegment,
   VehicleComposition,
   VehiclePool,
   VehicleServicePool,
@@ -30,8 +32,6 @@ interface ResourceRow {
 
 interface ActivityRow {
   id: string;
-  resource_id: string;
-  participant_resource_ids: string[] | null;
   client_id: string | null;
   title: string;
   start: string;
@@ -51,6 +51,17 @@ interface ActivityRow {
   required_qualifications: string[] | null;
   assigned_qualifications: string[] | null;
   work_rule_tags: string[] | null;
+  row_version: string | null;
+  created_at: string | Date | null;
+  created_by: string | null;
+  updated_at: string | Date | null;
+  updated_by: string | null;
+  scope: string | null;
+  participants: unknown | null;
+  group_id: string | null;
+  group_order: number | null;
+  train_run_id: string | null;
+  train_segment_ids: string[] | null;
   attributes: Record<string, unknown> | null;
   meta: Record<string, unknown> | null;
 }
@@ -61,6 +72,8 @@ export interface StageData {
   version?: string | null;
   resources: Resource[];
   activities: Activity[];
+  trainRuns: TrainRun[];
+  trainSegments: TrainSegment[];
 }
 
 export interface MasterDataSets {
@@ -190,8 +203,6 @@ export class PlanningRepository {
       `
         SELECT
           id,
-          resource_id,
-          participant_resource_ids,
           client_id,
           title,
           start,
@@ -211,11 +222,68 @@ export class PlanningRepository {
           required_qualifications,
           assigned_qualifications,
           work_rule_tags,
+          row_version,
+          created_at,
+          created_by,
+          updated_at,
+          updated_by,
+          scope,
+          participants,
+          group_id,
+          group_order,
+          train_run_id,
+          train_segment_ids,
           attributes,
           meta
         FROM planning_activity
         WHERE stage_id = $1
         ORDER BY start
+      `,
+      [stageId],
+    );
+
+    const trainRunsResult = await this.database.query<{
+      id: string;
+      train_number: string;
+      timetable_id: string | null;
+      attributes: Record<string, unknown> | null;
+    }>(
+      `
+        SELECT id, train_number, timetable_id, attributes
+        FROM train_run
+        WHERE stage_id = $1
+        ORDER BY train_number, id
+      `,
+      [stageId],
+    );
+
+    const trainSegmentsResult = await this.database.query<{
+      id: string;
+      train_run_id: string;
+      section_index: number;
+      start_time: string | Date;
+      end_time: string | Date;
+      from_location_id: string;
+      to_location_id: string;
+      path_id: string | null;
+      distance_km: number | null;
+      attributes: Record<string, unknown> | null;
+    }>(
+      `
+        SELECT
+          id,
+          train_run_id,
+          section_index,
+          start_time,
+          end_time,
+          from_location_id,
+          to_location_id,
+          path_id,
+          distance_km,
+          attributes
+        FROM train_segment
+        WHERE stage_id = $1
+        ORDER BY train_run_id, section_index, id
       `,
       [stageId],
     );
@@ -229,6 +297,24 @@ export class PlanningRepository {
       version: stageRow.version ? this.toIso(stageRow.version) : null,
       resources: resourcesResult.rows.map((row) => this.mapResource(row)),
       activities: activitiesResult.rows.map((row) => this.mapActivity(row)),
+      trainRuns: trainRunsResult.rows.map((row) => ({
+        id: row.id,
+        trainNumber: row.train_number,
+        timetableId: row.timetable_id ?? undefined,
+        attributes: row.attributes ?? undefined,
+      })),
+      trainSegments: trainSegmentsResult.rows.map((row) => ({
+        id: row.id,
+        trainRunId: row.train_run_id,
+        sectionIndex: row.section_index,
+        startTime: this.toIso(row.start_time),
+        endTime: this.toIso(row.end_time),
+        fromLocationId: row.from_location_id,
+        toLocationId: row.to_location_id,
+        pathId: row.path_id ?? undefined,
+        distanceKm: row.distance_km ?? undefined,
+        attributes: row.attributes ?? undefined,
+      })),
     };
   }
 
@@ -351,8 +437,6 @@ export class PlanningRepository {
                 FROM jsonb_to_recordset($2::jsonb)
                      AS a(
                        id TEXT,
-                       "resourceId" TEXT,
-                       "participantResourceIds" TEXT[],
                        "clientId" TEXT,
                        title TEXT,
                        start TIMESTAMPTZ,
@@ -372,6 +456,17 @@ export class PlanningRepository {
                        "requiredQualifications" TEXT[],
                        "assignedQualifications" TEXT[],
                        "workRuleTags" TEXT[],
+                       "rowVersion" TEXT,
+                       "createdAt" TIMESTAMPTZ,
+                       "createdBy" TEXT,
+                       "updatedAt" TIMESTAMPTZ,
+                       "updatedBy" TEXT,
+                       scope TEXT,
+                       participants JSONB,
+                       "groupId" TEXT,
+                       "groupOrder" INTEGER,
+                       "trainRunId" TEXT,
+                       "trainSegmentIds" TEXT[],
                        attributes JSONB,
                        meta JSONB
                      )
@@ -379,8 +474,6 @@ export class PlanningRepository {
               INSERT INTO planning_activity (
                 id,
                 stage_id,
-                resource_id,
-                participant_resource_ids,
                 client_id,
                 title,
                 start,
@@ -400,14 +493,23 @@ export class PlanningRepository {
                 required_qualifications,
                 assigned_qualifications,
                 work_rule_tags,
+                row_version,
+                created_at,
+                created_by,
+                updated_at,
+                updated_by,
+                scope,
+                participants,
+                group_id,
+                group_order,
+                train_run_id,
+                train_segment_ids,
                 attributes,
                 meta
               )
               SELECT
                 id,
                 $1,
-                "resourceId",
-                "participantResourceIds",
                 "clientId",
                 title,
                 start,
@@ -427,12 +529,21 @@ export class PlanningRepository {
                 "requiredQualifications",
                 "assignedQualifications",
                 "workRuleTags",
+                COALESCE("rowVersion", now()::text),
+                COALESCE("createdAt", now()),
+                "createdBy",
+                now(),
+                "updatedBy",
+                scope,
+                participants,
+                "groupId",
+                "groupOrder",
+                "trainRunId",
+                "trainSegmentIds",
                 attributes,
                 meta
               FROM payload
               ON CONFLICT (id) DO UPDATE SET
-                resource_id = EXCLUDED.resource_id,
-                participant_resource_ids = EXCLUDED.participant_resource_ids,
                 client_id = EXCLUDED.client_id,
                 title = EXCLUDED.title,
                 start = EXCLUDED.start,
@@ -452,8 +563,16 @@ export class PlanningRepository {
                 required_qualifications = EXCLUDED.required_qualifications,
                 assigned_qualifications = EXCLUDED.assigned_qualifications,
                 work_rule_tags = EXCLUDED.work_rule_tags,
+                row_version = EXCLUDED.row_version,
                 attributes = EXCLUDED.attributes,
                 meta = EXCLUDED.meta,
+                updated_by = EXCLUDED.updated_by,
+                scope = EXCLUDED.scope,
+                participants = EXCLUDED.participants,
+                group_id = EXCLUDED.group_id,
+                group_order = EXCLUDED.group_order,
+                train_run_id = EXCLUDED.train_run_id,
+                train_segment_ids = EXCLUDED.train_segment_ids,
                 updated_at = now()
             `,
             [stageId, JSON.stringify(upserts)],
@@ -930,10 +1049,17 @@ export class PlanningRepository {
   }
 
   private mapActivity(row: ActivityRow): Activity {
+    let participants: Activity['participants'] | undefined;
+    if (row.participants && Array.isArray(row.participants)) {
+      participants = (row.participants as any[]).map((entry) => ({
+        resourceId: String(entry.resourceId),
+        kind: entry.kind as any,
+        role: entry.role ?? undefined,
+      }));
+    }
+
     return {
       id: row.id,
-      resourceId: row.resource_id,
-      participantResourceIds: row.participant_resource_ids ?? undefined,
       clientId: row.client_id ?? undefined,
       title: row.title,
       start: this.toIso(row.start),
@@ -946,13 +1072,24 @@ export class PlanningRepository {
       serviceTemplateId: row.service_template_id ?? undefined,
       serviceDate: this.toDateString(row.service_date),
       serviceCategory: row.service_category ?? undefined,
-      serviceRole: row.service_role ?? undefined,
-      locationId: row.location_id ?? undefined,
-      locationLabel: row.location_label ?? undefined,
-      capacityGroupId: row.capacity_group_id ?? undefined,
-      requiredQualifications: row.required_qualifications ?? undefined,
-      assignedQualifications: row.assigned_qualifications ?? undefined,
-      workRuleTags: row.work_rule_tags ?? undefined,
+       serviceRole: row.service_role ?? undefined,
+       locationId: row.location_id ?? undefined,
+       locationLabel: row.location_label ?? undefined,
+       capacityGroupId: row.capacity_group_id ?? undefined,
+       requiredQualifications: row.required_qualifications ?? undefined,
+       assignedQualifications: row.assigned_qualifications ?? undefined,
+       workRuleTags: row.work_rule_tags ?? undefined,
+      rowVersion: row.row_version ?? undefined,
+      createdAt: row.created_at ? this.toIso(row.created_at) : undefined,
+      createdBy: row.created_by ?? undefined,
+      updatedAt: row.updated_at ? this.toIso(row.updated_at) : undefined,
+      updatedBy: row.updated_by ?? undefined,
+      scope: (row.scope as any) ?? undefined,
+      participants,
+      groupId: row.group_id ?? undefined,
+      groupOrder: row.group_order ?? undefined,
+      trainRunId: row.train_run_id ?? undefined,
+      trainSegmentIds: row.train_segment_ids ?? undefined,
       attributes: row.attributes ?? undefined,
       meta: row.meta ?? undefined,
     };
