@@ -49,6 +49,28 @@ paths:
     $ref: './planning/paths/master-data.yaml#/planning_master_data_vehicle_types'
   /planning/master-data/vehicle-compositions:
     $ref: './planning/paths/master-data.yaml#/planning_master_data_vehicle_compositions'
+  /planning/topology/operational-points:
+    $ref: './planning/paths/topology.yaml#/planning_topology_operational_points'
+  /planning/topology/sections-of-line:
+    $ref: './planning/paths/topology.yaml#/planning_topology_sections_of_line'
+  /planning/topology/personnel-sites:
+    $ref: './planning/paths/topology.yaml#/planning_topology_personnel_sites'
+  /planning/topology/replacement-stops:
+    $ref: './planning/paths/topology.yaml#/planning_topology_replacement_stops'
+  /planning/topology/replacement-routes:
+    $ref: './planning/paths/topology.yaml#/planning_topology_replacement_routes'
+  /planning/topology/replacement-edges:
+    $ref: './planning/paths/topology.yaml#/planning_topology_replacement_edges'
+  /planning/topology/op-replacement-stop-links:
+    $ref: './planning/paths/topology.yaml#/planning_topology_op_replacement_stop_links'
+  /planning/topology/op-replacement-links:
+    $ref: './planning/paths/topology.yaml#/planning_topology_op_replacement_links'
+  /planning/topology/transfer-edges:
+    $ref: './planning/paths/topology.yaml#/planning_topology_transfer_edges'
+  /planning/topology/import:
+    $ref: './planning/paths/topology.yaml#/planning_topology_import'
+  /planning/topology/import/events:
+    $ref: './planning/paths/topology.yaml#/planning_topology_import_events'
 components:
   parameters:
     $ref: './planning/components/parameters.yaml#/parameters'

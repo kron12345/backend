@@ -9,6 +9,14 @@ import {
   TimelineRange,
   TrainRun,
   TrainSegment,
+  OperationalPoint,
+  SectionOfLine,
+  PersonnelSite,
+  ReplacementStop,
+  ReplacementRoute,
+  ReplacementEdge,
+  OpReplacementStopLink,
+  TransferEdge,
   VehicleComposition,
   VehiclePool,
   VehicleServicePool,
@@ -83,6 +91,14 @@ export interface MasterDataSets {
   vehiclePools: VehiclePool[];
   vehicleTypes: VehicleType[];
   vehicleCompositions: VehicleComposition[];
+  operationalPoints: OperationalPoint[];
+  sectionsOfLine: SectionOfLine[];
+  personnelSites: PersonnelSite[];
+  replacementStops: ReplacementStop[];
+  replacementRoutes: ReplacementRoute[];
+  replacementEdges: ReplacementEdge[];
+  opReplacementStopLinks: OpReplacementStopLink[];
+  transferEdges: TransferEdge[];
 }
 
 interface PersonnelServicePoolRow {
@@ -161,9 +177,14 @@ interface VehicleCompositionEntryRow {
   quantity: number;
 }
 
+interface JsonPayloadRow<T> {
+  payload: T;
+}
+
 @Injectable()
 export class PlanningRepository {
   private readonly logger = new Logger(PlanningRepository.name);
+  private readonly missingTopologyTables = new Set<string>();
 
   constructor(private readonly database: DatabaseService) {}
 
@@ -628,6 +649,14 @@ export class PlanningRepository {
       vehiclePools,
       vehicleTypes,
       vehicleCompositions,
+      operationalPoints,
+      sectionsOfLine,
+      personnelSites,
+      replacementStops,
+      replacementRoutes,
+      replacementEdges,
+      opReplacementStopLinks,
+      transferEdges,
     ] = await Promise.all([
       this.database
         .query<PersonnelServicePoolRow>(
@@ -701,6 +730,38 @@ export class PlanningRepository {
         )
         .then((result) => result.rows.map((row) => this.mapVehicleType(row))),
       this.loadVehicleCompositions(),
+      this.loadJsonCollection<OperationalPoint>(
+        'topology_operational_point',
+        'unique_op_id',
+      ),
+      this.loadJsonCollection<SectionOfLine>(
+        'topology_section_of_line',
+        'sol_id',
+      ),
+      this.loadJsonCollection<PersonnelSite>(
+        'topology_personnel_site',
+        'site_id',
+      ),
+      this.loadJsonCollection<ReplacementStop>(
+        'topology_replacement_stop',
+        'replacement_stop_id',
+      ),
+      this.loadJsonCollection<ReplacementRoute>(
+        'topology_replacement_route',
+        'replacement_route_id',
+      ),
+      this.loadJsonCollection<ReplacementEdge>(
+        'topology_replacement_edge',
+        'replacement_edge_id',
+      ),
+      this.loadJsonCollection<OpReplacementStopLink>(
+        'topology_op_replacement_stop_link',
+        'link_id',
+      ),
+      this.loadJsonCollection<TransferEdge>(
+        'topology_transfer_edge',
+        'transfer_id',
+      ),
     ]);
 
     return {
@@ -710,10 +771,20 @@ export class PlanningRepository {
       vehiclePools,
       vehicleTypes,
       vehicleCompositions,
+      operationalPoints,
+      sectionsOfLine,
+      personnelSites,
+      replacementStops,
+      replacementRoutes,
+      replacementEdges,
+      opReplacementStopLinks,
+      transferEdges,
     };
   }
 
-  async replacePersonnelServicePools(items: PersonnelServicePool[]): Promise<void> {
+  async replacePersonnelServicePools(
+    items: PersonnelServicePool[],
+  ): Promise<void> {
     if (!this.isEnabled) {
       return;
     }
@@ -1038,6 +1109,96 @@ export class PlanningRepository {
     });
   }
 
+  async replaceOperationalPoints(items: OperationalPoint[]): Promise<void> {
+    if (!this.isEnabled) {
+      return;
+    }
+    await this.replaceJsonPayloadCollection(
+      'topology_operational_point',
+      'unique_op_id',
+      items.map((item) => ({ id: item.uniqueOpId, payload: item })),
+    );
+  }
+
+  async replaceSectionsOfLine(items: SectionOfLine[]): Promise<void> {
+    if (!this.isEnabled) {
+      return;
+    }
+    await this.replaceJsonPayloadCollection(
+      'topology_section_of_line',
+      'sol_id',
+      items.map((item) => ({ id: item.solId, payload: item })),
+    );
+  }
+
+  async replacePersonnelSites(items: PersonnelSite[]): Promise<void> {
+    if (!this.isEnabled) {
+      return;
+    }
+    await this.replaceJsonPayloadCollection(
+      'topology_personnel_site',
+      'site_id',
+      items.map((item) => ({ id: item.siteId, payload: item })),
+    );
+  }
+
+  async replaceReplacementStops(items: ReplacementStop[]): Promise<void> {
+    if (!this.isEnabled) {
+      return;
+    }
+    await this.replaceJsonPayloadCollection(
+      'topology_replacement_stop',
+      'replacement_stop_id',
+      items.map((item) => ({ id: item.replacementStopId, payload: item })),
+    );
+  }
+
+  async replaceReplacementRoutes(items: ReplacementRoute[]): Promise<void> {
+    if (!this.isEnabled) {
+      return;
+    }
+    await this.replaceJsonPayloadCollection(
+      'topology_replacement_route',
+      'replacement_route_id',
+      items.map((item) => ({ id: item.replacementRouteId, payload: item })),
+    );
+  }
+
+  async replaceReplacementEdges(items: ReplacementEdge[]): Promise<void> {
+    if (!this.isEnabled) {
+      return;
+    }
+    await this.replaceJsonPayloadCollection(
+      'topology_replacement_edge',
+      'replacement_edge_id',
+      items.map((item) => ({ id: item.replacementEdgeId, payload: item })),
+    );
+  }
+
+  async replaceOpReplacementStopLinks(
+    items: OpReplacementStopLink[],
+  ): Promise<void> {
+    if (!this.isEnabled) {
+      return;
+    }
+    await this.replaceJsonPayloadCollection(
+      'topology_op_replacement_stop_link',
+      'link_id',
+      items.map((item) => ({ id: item.linkId, payload: item })),
+    );
+  }
+
+  async replaceTransferEdges(items: TransferEdge[]): Promise<void> {
+    if (!this.isEnabled) {
+      return;
+    }
+    await this.replaceJsonPayloadCollection(
+      'topology_transfer_edge',
+      'transfer_id',
+      items.map((item) => ({ id: item.transferId, payload: item })),
+    );
+  }
+
   private mapResource(row: ResourceRow): Resource {
     return {
       id: row.id,
@@ -1051,9 +1212,9 @@ export class PlanningRepository {
   private mapActivity(row: ActivityRow): Activity {
     let participants: Activity['participants'] | undefined;
     if (row.participants && Array.isArray(row.participants)) {
-      participants = (row.participants as any[]).map((entry) => ({
+      participants = row.participants.map((entry) => ({
         resourceId: String(entry.resourceId),
-        kind: entry.kind as any,
+        kind: entry.kind,
         role: entry.role ?? undefined,
       }));
     }
@@ -1072,13 +1233,13 @@ export class PlanningRepository {
       serviceTemplateId: row.service_template_id ?? undefined,
       serviceDate: this.toDateString(row.service_date),
       serviceCategory: row.service_category ?? undefined,
-       serviceRole: row.service_role ?? undefined,
-       locationId: row.location_id ?? undefined,
-       locationLabel: row.location_label ?? undefined,
-       capacityGroupId: row.capacity_group_id ?? undefined,
-       requiredQualifications: row.required_qualifications ?? undefined,
-       assignedQualifications: row.assigned_qualifications ?? undefined,
-       workRuleTags: row.work_rule_tags ?? undefined,
+      serviceRole: row.service_role ?? undefined,
+      locationId: row.location_id ?? undefined,
+      locationLabel: row.location_label ?? undefined,
+      capacityGroupId: row.capacity_group_id ?? undefined,
+      requiredQualifications: row.required_qualifications ?? undefined,
+      assignedQualifications: row.assigned_qualifications ?? undefined,
+      workRuleTags: row.work_rule_tags ?? undefined,
       rowVersion: row.row_version ?? undefined,
       createdAt: row.created_at ? this.toIso(row.created_at) : undefined,
       createdBy: row.created_by ?? undefined,
@@ -1096,7 +1257,9 @@ export class PlanningRepository {
   }
 
   private toIso(value: string | Date): string {
-    return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+    return value instanceof Date
+      ? value.toISOString()
+      : new Date(value).toISOString();
   }
 
   private toDateString(value: string | Date | null): string | undefined {
@@ -1115,7 +1278,9 @@ export class PlanningRepository {
       : parsed.toISOString().substring(0, 10);
   }
 
-  private mapPersonnelServicePool(row: PersonnelServicePoolRow): PersonnelServicePool {
+  private mapPersonnelServicePool(
+    row: PersonnelServicePoolRow,
+  ): PersonnelServicePool {
     return {
       id: row.id,
       name: row.name,
@@ -1138,7 +1303,9 @@ export class PlanningRepository {
     };
   }
 
-  private mapVehicleServicePool(row: VehicleServicePoolRow): VehicleServicePool {
+  private mapVehicleServicePool(
+    row: VehicleServicePoolRow,
+  ): VehicleServicePool {
     return {
       id: row.id,
       name: row.name,
@@ -1175,7 +1342,9 @@ export class PlanningRepository {
       weightTons: this.toNumber(row.weight_tons),
       brakeType: row.brake_type ?? undefined,
       brakePercentage: row.brake_percentage ?? undefined,
-      tiltingCapability: (row.tilting_capability as VehicleType['tiltingCapability']) ?? undefined,
+      tiltingCapability:
+        (row.tilting_capability as VehicleType['tiltingCapability']) ??
+        undefined,
       powerSupplySystems: row.power_supply_systems ?? undefined,
       trainProtectionSystems: row.train_protection_systems ?? undefined,
       etcsLevel: row.etcs_level ?? undefined,
@@ -1218,7 +1387,10 @@ export class PlanningRepository {
     rows: VehicleCompositionRow[],
     entryRows: VehicleCompositionEntryRow[],
   ): VehicleComposition[] {
-    const entriesByComposition = new Map<string, VehicleCompositionEntryRow[]>();
+    const entriesByComposition = new Map<
+      string,
+      VehicleCompositionEntryRow[]
+    >();
     entryRows.forEach((entry) => {
       const list = entriesByComposition.get(entry.composition_id) ?? [];
       list.push(entry);
@@ -1241,7 +1413,11 @@ export class PlanningRepository {
   private flattenVehicleCompositionEntries(
     items: VehicleComposition[],
   ): { compositionId: string; typeId: string; quantity: number }[] {
-    const payload: { compositionId: string; typeId: string; quantity: number }[] = [];
+    const payload: {
+      compositionId: string;
+      typeId: string;
+      quantity: number;
+    }[] = [];
     items.forEach((composition) => {
       (composition.entries ?? []).forEach((entry) => {
         payload.push({
@@ -1278,12 +1454,83 @@ export class PlanningRepository {
     });
   }
 
+  private async replaceJsonPayloadCollection(
+    tableName: string,
+    idColumn: string,
+    rows: { id: string; payload: unknown }[],
+  ): Promise<void> {
+    await this.database.withClient(async (client) => {
+      await client.query('BEGIN');
+      try {
+        await client.query(`DELETE FROM ${tableName}`);
+        if (rows.length) {
+          await client.query(
+            `
+              WITH incoming AS (
+                SELECT *
+                FROM jsonb_to_recordset($1::jsonb) AS t(
+                  id TEXT,
+                  payload JSONB
+                )
+              )
+              INSERT INTO ${tableName} (${idColumn}, payload)
+              SELECT id, payload
+              FROM incoming
+            `,
+            [JSON.stringify(rows)],
+          );
+        }
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        if (this.isTopologyStructureMissing(error)) {
+          this.warnTopologyTableOnce(
+            tableName,
+            'noch nicht migriert – überspringe Persistierung.',
+          );
+          return;
+        }
+        this.logger.error(
+          `Fehler beim Aktualisieren von ${tableName}`,
+          (error as Error).stack ?? String(error),
+        );
+        throw error;
+      }
+    });
+  }
+
   private toNumber(value: string | number | null): number | undefined {
     if (value === null || value === undefined) {
       return undefined;
     }
     const parsed = typeof value === 'number' ? value : Number(value);
     return Number.isNaN(parsed) ? undefined : parsed;
+  }
+
+  private async loadJsonCollection<T>(
+    tableName: string,
+    idColumn: string,
+  ): Promise<T[]> {
+    if (!this.isEnabled) {
+      return [];
+    }
+    try {
+      const result = await this.database.query<JsonPayloadRow<T>>(
+        `SELECT payload FROM ${tableName} ORDER BY ${idColumn}`,
+      );
+      return result.rows.map((row) => row.payload);
+    } catch (error) {
+      if (this.isTopologyStructureMissing(error)) {
+        if (!this.missingTopologyTables.has(tableName)) {
+          this.logger.debug(
+            `Topologie-Tabelle ${tableName} ohne payload-Spalte gefunden – Migration 004 muss noch ausgeführt werden. Verwende leere Sammlung.`,
+          );
+        }
+        this.missingTopologyTables.add(tableName);
+        return [];
+      }
+      throw error;
+    }
   }
 
   private createEmptyMasterData(): MasterDataSets {
@@ -1294,6 +1541,27 @@ export class PlanningRepository {
       vehiclePools: [],
       vehicleTypes: [],
       vehicleCompositions: [],
+      operationalPoints: [],
+      sectionsOfLine: [],
+      personnelSites: [],
+      replacementStops: [],
+      replacementRoutes: [],
+      replacementEdges: [],
+      opReplacementStopLinks: [],
+      transferEdges: [],
     };
+  }
+
+  private isTopologyStructureMissing(error: unknown): boolean {
+    const code = (error as { code?: string })?.code;
+    return code === '42703' || code === '42P01';
+  }
+
+  private warnTopologyTableOnce(tableName: string, message: string): void {
+    if (this.missingTopologyTables.has(tableName)) {
+      return;
+    }
+    this.missingTopologyTables.add(tableName);
+    this.logger.warn(`Topologie-Tabelle ${tableName} ${message}`);
   }
 }

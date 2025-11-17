@@ -265,6 +265,231 @@ export interface VehicleComposition {
 export type VehicleCompositionListRequest = ListPayload<VehicleComposition>;
 export type VehicleCompositionListResponse = VehicleComposition[];
 
+export interface LatLng {
+  lat: number;
+  lng: number;
+}
+
+export interface TopologyAttribute {
+  key: string;
+  value: string;
+  validFrom?: string | null;
+}
+
+export interface OperationalPoint {
+  opId: string;
+  uniqueOpId: string;
+  countryCode: string;
+  name: string;
+  opType: string;
+  position?: LatLng | null;
+  attributes?: TopologyAttribute[];
+  createdAt?: string | null;
+  createdBy?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+}
+
+export type OperationalPointListRequest = ListPayload<OperationalPoint>;
+export type OperationalPointListResponse = OperationalPoint[];
+
+export type SectionOfLineNature = 'REGULAR' | 'LINK';
+
+export interface SectionOfLine {
+  solId: string;
+  startUniqueOpId: string;
+  endUniqueOpId: string;
+  lengthKm?: number | null;
+  nature: SectionOfLineNature;
+  polyline?: LatLng[];
+  attributes?: TopologyAttribute[];
+  createdAt?: string | null;
+  createdBy?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+}
+
+export type SectionOfLineListRequest = ListPayload<SectionOfLine>;
+export type SectionOfLineListResponse = SectionOfLine[];
+
+export type PersonnelSiteType =
+  | 'MELDESTELLE'
+  | 'PAUSENRAUM'
+  | 'BEREITSCHAFT'
+  | 'B\xdcRO';
+
+export interface PersonnelSite {
+  siteId: string;
+  siteType: PersonnelSiteType;
+  name: string;
+  uniqueOpId?: string | null;
+  position: LatLng;
+  openingHoursJson?: string | null;
+  attributes?: TopologyAttribute[];
+  createdAt?: string | null;
+  createdBy?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+}
+
+export type PersonnelSiteListRequest = ListPayload<PersonnelSite>;
+export type PersonnelSiteListResponse = PersonnelSite[];
+
+export interface ReplacementStop {
+  replacementStopId: string;
+  name: string;
+  stopCode?: string | null;
+  position: LatLng;
+  nearestUniqueOpId?: string | null;
+  attributes?: TopologyAttribute[];
+  createdAt?: string | null;
+  createdBy?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+}
+
+export type ReplacementStopListRequest = ListPayload<ReplacementStop>;
+export type ReplacementStopListResponse = ReplacementStop[];
+
+export interface ReplacementRoute {
+  replacementRouteId: string;
+  name: string;
+  operator?: string | null;
+  attributes?: TopologyAttribute[];
+  createdAt?: string | null;
+  createdBy?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+}
+
+export type ReplacementRouteListRequest = ListPayload<ReplacementRoute>;
+export type ReplacementRouteListResponse = ReplacementRoute[];
+
+export interface ReplacementEdge {
+  replacementEdgeId: string;
+  replacementRouteId: string;
+  fromStopId: string;
+  toStopId: string;
+  seq: number;
+  avgDurationSec?: number | null;
+  distanceM?: number | null;
+  polyline?: LatLng[];
+  attributes?: TopologyAttribute[];
+  createdAt?: string | null;
+  createdBy?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+}
+
+export type ReplacementEdgeListRequest = ListPayload<ReplacementEdge>;
+export type ReplacementEdgeListResponse = ReplacementEdge[];
+
+export type OpReplacementRelationType =
+  | 'PRIMARY_SEV_STOP'
+  | 'ALTERNATIVE'
+  | 'TEMPORARY';
+
+export interface OpReplacementStopLink {
+  linkId: string;
+  uniqueOpId: string;
+  replacementStopId: string;
+  relationType: OpReplacementRelationType;
+  walkingTimeSec?: number | null;
+  distanceM?: number | null;
+  attributes?: TopologyAttribute[];
+  createdAt?: string | null;
+  createdBy?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+}
+
+export type OpReplacementStopLinkListRequest = ListPayload<OpReplacementStopLink>;
+export type OpReplacementStopLinkListResponse = OpReplacementStopLink[];
+
+export type TransferNodeKind = 'OP' | 'PERSONNEL_SITE' | 'REPLACEMENT_STOP';
+
+export interface TransferNodeBase {
+  kind: TransferNodeKind;
+}
+
+export interface TransferNodeOperationalPoint extends TransferNodeBase {
+  kind: 'OP';
+  uniqueOpId: string;
+}
+
+export interface TransferNodePersonnelSite extends TransferNodeBase {
+  kind: 'PERSONNEL_SITE';
+  siteId: string;
+}
+
+export interface TransferNodeReplacementStop extends TransferNodeBase {
+  kind: 'REPLACEMENT_STOP';
+  replacementStopId: string;
+}
+
+export type TransferNode =
+  | TransferNodeOperationalPoint
+  | TransferNodePersonnelSite
+  | TransferNodeReplacementStop;
+
+export type TransferMode = 'WALK' | 'SHUTTLE' | 'INTERNAL';
+
+export interface TransferEdge {
+  transferId: string;
+  from: TransferNode;
+  to: TransferNode;
+  mode: TransferMode;
+  avgDurationSec?: number | null;
+  distanceM?: number | null;
+  bidirectional: boolean;
+  attributes?: TopologyAttribute[];
+  createdAt?: string | null;
+  createdBy?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+}
+
+export type TransferEdgeListRequest = ListPayload<TransferEdge>;
+export type TransferEdgeListResponse = TransferEdge[];
+
+export type TopologyImportKind =
+  | 'operational-points'
+  | 'sections-of-line'
+  | 'personnel-sites'
+  | 'replacement-stops'
+  | 'replacement-routes'
+  | 'replacement-edges'
+  | 'op-replacement-stop-links'
+  | 'transfer-edges';
+
+export interface TopologyImportRequest {
+  kinds?: TopologyImportKind[];
+}
+
+export interface TopologyImportResponse {
+  startedAt: string;
+  requestedKinds: TopologyImportKind[];
+  message?: string;
+}
+
+export type TopologyImportStatus =
+  | 'queued'
+  | 'in-progress'
+  | 'succeeded'
+  | 'failed'
+  | 'ignored';
+
+export interface TopologyImportEventRequest {
+  status: TopologyImportStatus;
+  kinds?: TopologyImportKind[];
+  message?: string;
+  source?: string;
+}
+
+export interface TopologyImportRealtimeEvent extends TopologyImportEventRequest {
+  timestamp: string;
+}
+
 export type PlanningStageRealtimeScope = 'resources' | 'activities' | 'timeline';
 
 export interface PlanningStageRealtimeEvent {

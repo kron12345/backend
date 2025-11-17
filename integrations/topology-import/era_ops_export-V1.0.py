@@ -24,12 +24,16 @@ Beispiel:
 
 import argparse
 import csv
+import re
 import sys
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Iterable, List, Optional, Sequence
 
 import requests
+
+from topology_client import TopologyAPIClient, resolve_api_base
 
 ERA_ENDPOINT_DEFAULT = "https://prod.virtuoso.ecdp.tech.ec.europa.eu/sparql"
 RINF_GRAPH = "<http://data.europa.eu/949/graph/rinf>"
@@ -100,6 +104,39 @@ def unique_join(values: Iterable[str]) -> str:
         if v and v not in seen:
             seen.append(v)
     return "|".join(seen)
+
+OP_NAMESPACE = uuid.UUID("7df5a887-af6a-4b7c-8e12-47ffc4d2d6a1")
+
+
+def build_normalizer(prefix: Optional[str], fill: str):
+    if not prefix:
+        return lambda value: value
+    fill = fill or ""
+    if fill:
+        pattern = re.compile(
+            r'^' + re.escape(prefix) + r'(?:' + re.escape(fill) + r')*(.+)$',
+        )
+    else:
+        pattern = re.compile(r'^' + re.escape(prefix) + r'(.+)$')
+
+    def normalize(value: Optional[str]):
+        if value is None:
+            return None
+        s = str(value).strip()
+        match = pattern.match(s)
+        return match.group(1) if match else s
+
+    return normalize
+
+
+def normalize_attribute_key(name: str) -> str:
+    tokens = re.split(r"[^A-Za-z0-9]+", name)
+    tokens = [token for token in tokens if token]
+    if not tokens:
+        return name.lower()
+    first = tokens[0].lower()
+    rest = [token.capitalize() for token in tokens[1:]]
+    return first + "".join(rest)
 
 def http_post_sparql(query: str, timeout: int, retries: int, endpoint: str) -> dict:
     # Form-encoded → raw → GET (Fallbackkaskade)
@@ -375,21 +412,28 @@ def row_bool_not_active(valid_from: Optional[str], valid_to: Optional[str], as_o
 
 # ---------------- orchestrator ----------------
 
-def export_ops(country_iso3: str, outfile: str,
-               props_mode: str = "core",
-               add_predicates: Optional[List[str]] = None,
-               always_include_extras: bool = True,   # bleibt für Kompat., steuert nur Inhalte (nicht Header)
-               include_extras_columns: bool = False, # neue Option: Extra-Spalten nur bei True
-               page_size: int = 5000,
-               chunk_labels: int = 400,
-               chunk_extras: int = 120,
-               parallel: int = 3,
-               timeout: int = 90,
-               retries: int = 7,
-               as_of: Optional[str] = None,
-               endpoint_url: str = ERA_ENDPOINT_DEFAULT,
-               emit_1900_row: bool = True,
-               type_as_code: bool = False):
+def export_ops(
+    country_iso3: str,
+    outfile: Optional[str],
+    *,
+    props_mode: str = "core",
+    add_predicates: Optional[List[str]] = None,
+    always_include_extras: bool = True,
+    include_extras_columns: bool = False,
+    page_size: int = 5000,
+    chunk_labels: int = 400,
+    chunk_extras: int = 120,
+    parallel: int = 3,
+    timeout: int = 90,
+    retries: int = 7,
+    as_of: Optional[str] = None,
+    endpoint_url: str = ERA_ENDPOINT_DEFAULT,
+    emit_1900_row: bool = True,
+    type_as_code: bool = False,
+    api_client: Optional[TopologyAPIClient] = None,
+    normalize_prefix: Optional[str] = None,
+    normalize_fillchar: str = "0",
+):
 
     # Stage A: OP-IRIs einsammeln
     op_iris = fetch_all_op_iris(country_iso3, page_size, timeout, retries, endpoint_url)
@@ -491,96 +535,196 @@ def export_ops(country_iso3: str, outfile: str,
 
     country_iso3_u = country_iso3.upper()
 
-    with open(outfile, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fieldnames, delimiter=';')
-        w.writeheader()
-        for op in op_iris:
-            b = det_by_op.get(op, {})
-            name = b.get("name",{}).get("value","")
-            u1 = b.get("u1",{}).get("value",""); u2 = b.get("u2",{}).get("value","")
-            plc = b.get("plc",{}).get("value","")
-            valid_from = b.get("validFrom",{}).get("value","")
-            valid_to   = b.get("validTo",{}).get("value","")
-            opType_iri = b.get("opType",{}).get("value","")
-            wkt = b.get("wkt",{}).get("value","")
+    sink = OperationalPointSink(
+        outfile,
+        fieldnames,
+        api_client=api_client,
+        normalize_prefix=normalize_prefix,
+        normalize_fillchar=normalize_fillchar,
+    )
+    for op in op_iris:
+        b = det_by_op.get(op, {})
+        name = b.get("name",{}).get("value","")
+        u1 = b.get("u1",{}).get("value",""); u2 = b.get("u2",{}).get("value","")
+        plc = b.get("plc",{}).get("value","")
+        valid_from = b.get("validFrom",{}).get("value","")
+        valid_to   = b.get("validTo",{}).get("value","")
+        opType_iri = b.get("opType",{}).get("value","")
+        wkt = b.get("wkt",{}).get("value","")
 
-            optype_id = iri_tail(opType_iri) if opType_iri else ""
-            if optype_id.startswith("rinf/"):
-                optype_id = optype_id.rsplit("/",1)[-1]
-            optype_name = OPTYPE_CODE2NAME.get(optype_id, "")
+        optype_id = iri_tail(opType_iri) if opType_iri else ""
+        if optype_id.startswith("rinf/"):
+            optype_id = optype_id.rsplit("/",1)[-1]
+        optype_name = OPTYPE_CODE2NAME.get(optype_id, "")
 
-            # lat/lon
-            lat = lon = ""
-            if wkt.startswith("POINT(") and wkt.endswith(")"):
-                try:
-                    parts = wkt[6:-1].split()
-                    lon, lat = parts[0], parts[1]
-                except Exception:
-                    pass
+        # lat/lon
+        lat = lon = ""
+        if wkt.startswith("POINT(") and wkt.endswith(")"):
+            try:
+                parts = wkt[6:-1].split()
+                lon, lat = parts[0], parts[1]
+            except Exception:
+                pass
 
-            # Country ISO2 (für TAF_TAP_COUNTRY_CODE_I_S_O)
-            iso2 = plc[:2].upper() if plc and len(plc)>=2 else iso3_to_iso2(country_iso3_u)
+        # Country ISO2 (für TAF_TAP_COUNTRY_CODE_I_S_O)
+        iso2 = plc[:2].upper() if plc and len(plc)>=2 else iso3_to_iso2(country_iso3_u)
 
-            # PLC nur Ziffern
-            plc_numeric = ""
-            if plc:
-                digits = "".join(ch for ch in plc if ch.isdigit())
-                plc_numeric = digits if digits else ""
+        # PLC nur Ziffern
+        plc_numeric = ""
+        if plc:
+            digits = "".join(ch for ch in plc if ch.isdigit())
+            plc_numeric = digits if digits else ""
 
-            # ID: UOPID zuerst, sonst P_ID
-            id_value = (u1 or u2) if (u1 or u2) else sha1_id(op)
+        # ID: UOPID zuerst, sonst P_ID
+        id_value = (u1 or u2) if (u1 or u2) else sha1_id(op)
 
-            type_value = optype_id if type_as_code else optype_name
+        type_value = optype_id if type_as_code else optype_name
 
-            out = {
-                "VALID_FROM": valid_from,
-                "ID": id_value,
-                "NAME": name,
-                "NOT_ACTIVE": row_bool_not_active(valid_from, valid_to, as_of),
-                "Owner": unique_join(im_by_op.get(op, [])),
-                "Country": country_iso3_u,
-                "Type": type_value,
-                "TDA_PARKING_NODE": "",
-                "LANGUAGE": unique_join(lang_by_op.get(op, [])),
-                "TAF_TAP_COUNTRY_CODE_I_S_O": iso2,
-                "TAF_TAP_LOCATION_PRIMARY_CODE": plc_numeric,
-                "TSI_Z_DE_NOT_RELEVANT_FOR_PATH_ORDERING": "",
-                "LATITUDE": lat,
-                "LONGITUDE": lon,
-                "TDA_USABLE_LENGTH": unique_join(l_by_op.get(op, [])),
-                "TDA_PLATFORM_HEIGHT": unique_join(h_by_op.get(op, [])),
-                "TDA_KILOMETER": unique_join(km_by_op.get(op, [])),
-                "TDA_LINE_NATIONAL": unique_join(nat_by_op.get(op, [])),
-                "TDA_PARENT_NET_NODE": "",
-                                "P_ID": sha1_id(op),
-                "URL": op or "",
-            }
+        out = {
+            "VALID_FROM": valid_from,
+            "ID": id_value,
+            "NAME": name,
+            "NOT_ACTIVE": row_bool_not_active(valid_from, valid_to, as_of),
+            "Owner": unique_join(im_by_op.get(op, [])),
+            "Country": country_iso3_u,
+            "Type": type_value,
+            "TDA_PARKING_NODE": "",
+            "LANGUAGE": unique_join(lang_by_op.get(op, [])),
+            "TAF_TAP_COUNTRY_CODE_I_S_O": iso2,
+            "TAF_TAP_LOCATION_PRIMARY_CODE": plc_numeric,
+            "TSI_Z_DE_NOT_RELEVANT_FOR_PATH_ORDERING": "",
+            "LATITUDE": lat,
+            "LONGITUDE": lon,
+            "TDA_USABLE_LENGTH": unique_join(l_by_op.get(op, [])),
+            "TDA_PLATFORM_HEIGHT": unique_join(h_by_op.get(op, [])),
+            "TDA_KILOMETER": unique_join(km_by_op.get(op, [])),
+            "TDA_LINE_NATIONAL": unique_join(nat_by_op.get(op, [])),
+            "TDA_PARENT_NET_NODE": "",
+            "P_ID": sha1_id(op),
+            "URL": op or "",
+        }
+        out["_OP_IRI"] = op
+        out["_OP_TYPE_CODE"] = optype_id
+        out["_OP_TYPE_LABEL"] = optype_name
+        out["_UOPID_PRIMARY"] = u1
+        out["_UOPID_SECONDARY"] = u2
+        out["_VALID_TO"] = valid_to
 
-            # Optional: Extra-Prädikat-Spalten
-            for tail in extras_cols:
-                full = None
-                for key in extras_map.get(op, {}):
-                    if iri_tail(key.strip("<>")) == tail:
-                        full = key; break
-                out[tail] = unique_join(extras_map.get(op, {}).get(full, [])) if full else ""
+        # Optional: Extra-Prädikat-Spalten
+        for tail in extras_cols:
+            full = None
+            for key in extras_map.get(op, {}):
+                if iri_tail(key.strip("<>")) == tail:
+                    full = key; break
+            out[tail] = unique_join(extras_map.get(op, {}).get(full, [])) if full else ""
 
-            # ➊ Basis-Zeile ab 1900-01-01 mit NOT_ACTIVE=true (falls aktiviert)
-            if emit_1900_row:
-                base = dict(out)
-                base["VALID_FROM"] = "1900-01-01"
-                base["NOT_ACTIVE"] = "true"
-                w.writerow(base)
+        # ➊ Basis-Zeile ab 1900-01-01 mit NOT_ACTIVE=true (falls aktiviert)
+        if emit_1900_row:
+            base = dict(out)
+            base["VALID_FROM"] = "1900-01-01"
+            base["NOT_ACTIVE"] = "true"
+            sink.write_csv_only(base)
 
-            w.writerow(out)
+        sink.write(out)
 
-    print(f"[done] ops -> {outfile} ({len(op_iris)} rows)")
+    sink.finish()
+    if api_client:
+        print(f"[done] uploaded {sink.record_count} operational points via API")
+    if outfile:
+        print(f"[done] ops -> {outfile} ({sink.record_count} rows)")
+
+class OperationalPointSink:
+    EXCLUDED_ATTR_COLUMNS = {
+        "validFrom",
+    }
+
+    def __init__(
+        self,
+        csv_path: Optional[str],
+        fieldnames: List[str],
+        *,
+        api_client: Optional[TopologyAPIClient],
+        normalize_prefix: Optional[str],
+        normalize_fillchar: str,
+    ):
+        self.api_client = api_client
+        self.records: List[dict] = []
+        self.record_count = 0
+        self._normalize = build_normalizer(normalize_prefix, normalize_fillchar)
+        self._file = None
+        self._writer = None
+        if csv_path:
+            self._file = open(csv_path, "w", newline="", encoding="utf-8")
+            self._writer = csv.DictWriter(
+                self._file,
+                fieldnames=fieldnames,
+                delimiter=';',
+            )
+            self._writer.writeheader()
+
+    def write_csv_only(self, row: dict) -> None:
+        if self._writer:
+            self._writer.writerow(row)
+
+    def write(self, row: dict) -> None:
+        if self._writer:
+            self._writer.writerow(row)
+        converted = self._convert_row(row)
+        self.records.append(converted)
+        self.record_count += 1
+
+    def finish(self) -> None:
+        if self._file:
+            self._file.close()
+        if self.api_client and self.records:
+            self.api_client.replace_operational_points(self.records)
+
+    def _convert_row(self, row: dict) -> dict:
+        raw_id = row.get("ID") or ""
+        raw_unique = (
+            row.get("_UOPID_PRIMARY")
+            or row.get("_UOPID_SECONDARY")
+            or raw_id
+        )
+        unique_op_id = self._normalize(raw_unique) or raw_unique
+        op_id = str(uuid.uuid5(OP_NAMESPACE, unique_op_id))
+        lat = row.get("LATITUDE")
+        lon = row.get("LONGITUDE")
+        valid_from = row.get("VALID_FROM") or row.get("valid_from") or ""
+
+        attributes = []
+        for key, value in row.items():
+            if key.startswith("_"):
+                continue
+            key_norm = normalize_attribute_key(key)
+            if key_norm in self.EXCLUDED_ATTR_COLUMNS:
+                continue
+            if key_norm == "validFrom":
+                continue
+            if value is None or (isinstance(value, str) and value == ""):
+                continue
+            attr_value = str(value)
+            if key_norm == "id":
+                attr_value = unique_op_id
+            attr = {"key": key_norm, "value": attr_value}
+            if valid_from:
+                attr["validFrom"] = valid_from
+            attributes.append(attr)
+
+        record: dict = {
+            "opId": op_id,
+            "uniqueOpId": unique_op_id,
+        }
+        if attributes:
+            record["attributes"] = attributes
+        return record
 
 # ---------------- CLI ----------------
 
 def main():
-    ap = argparse.ArgumentParser(description="Export ERA RINF Operational Points to CSV (seek pagination, TDA defaults)")
+    ap = argparse.ArgumentParser(description="Export ERA RINF Operational Points (seek pagination, TDA defaults)")
     ap.add_argument("--country", required=True, help="ISO3 country code, e.g. DEU, FRA, CHE")
-    ap.add_argument("--outfile", required=True, help="Output CSV path")
+    ap.add_argument("--outfile", help="Optional CSV output path (legacy compatibility)")
     ap.add_argument("--props-mode", choices=["none","core","all"], default="core",
                     help="Welche Extra-Prädikate laden (core/all/none)")
     ap.add_argument("--add-predicate", action="append", default=[],
@@ -601,26 +745,64 @@ def main():
                 help="Keinen 1900-01-01 NOT_ACTIVE=true Basis-Datensatz je OP erzeugen")
     ap.add_argument("--type-as-code", action="store_true",
                 help="Spalte 'Type' als numerischen OP-Type-Code (z. B. 10,80,90) ausgeben")
+    ap.add_argument("--api-base", help="Backend API Basis (z. B. http://localhost:3000/api/v1). Defaults zu $TOPOLOGY_API_BASE.")
+    ap.add_argument("--api-timeout", type=int, default=120, help="Timeout für Backend-Aufrufe (Sekunden).")
+    ap.add_argument("--import-source", default="era_ops_export", help="Kennung für Import-Events.")
+    ap.add_argument("--skip-events", action="store_true", help="Keine Import-Events an das Backend schicken.")
+    ap.add_argument("--normalize-prefix", help="Optionales Prefix für ID-Normalisierung (z. B. DE).")
+    ap.add_argument("--normalize-fillchar", default="0", help="Füllzeichen hinter dem Prefix (default: 0).")
     args = ap.parse_args()
 
-    export_ops(
-        country_iso3=args.country.upper(),
-        outfile=args.outfile,
-        props_mode=args.props_mode,
-        add_predicates=args.add_predicate,
-        always_include_extras=args.always_include_extras,
-        include_extras_columns=args.include_extras_columns,
-        page_size=args.page_size,
-        chunk_labels=args.chunk_labels,
-        chunk_extras=args.chunk_extras,
-        parallel=args.parallel,
-        timeout=args.timeout,
-        retries=args.retries,
-        as_of=args.as_of,
-        endpoint_url=args.endpoint_url,
-        emit_1900_row=not args.no_1900_row,
-        type_as_code=args.type_as_code,
-    )
+    api_base = resolve_api_base(args.api_base)
+    if not api_base and not args.outfile:
+        ap.error("Either --outfile oder --api-base (oder TOPOLOGY_API_BASE) muss angegeben werden.")
+    api_client = TopologyAPIClient(api_base, timeout=args.api_timeout) if api_base else None
+    kinds = ["operational-points"]
+    try:
+        if api_client and not args.skip_events:
+            api_client.send_event(
+                "in-progress",
+                kinds=kinds,
+                message=f"Import {args.country.upper()} gestartet",
+                source=args.import_source,
+            )
+        export_ops(
+            country_iso3=args.country.upper(),
+            outfile=args.outfile,
+            props_mode=args.props_mode,
+            add_predicates=args.add_predicate,
+            always_include_extras=args.always_include_extras,
+            include_extras_columns=args.include_extras_columns,
+            page_size=args.page_size,
+            chunk_labels=args.chunk_labels,
+            chunk_extras=args.chunk_extras,
+            parallel=args.parallel,
+            timeout=args.timeout,
+            retries=args.retries,
+            as_of=args.as_of,
+            endpoint_url=args.endpoint_url,
+            emit_1900_row=not args.no_1900_row,
+            type_as_code=args.type_as_code,
+            api_client=api_client,
+            normalize_prefix=args.normalize_prefix,
+            normalize_fillchar=args.normalize_fillchar,
+        )
+        if api_client and not args.skip_events:
+            api_client.send_event(
+                "succeeded",
+                kinds=kinds,
+                message=f"Import {args.country.upper()} abgeschlossen",
+                source=args.import_source,
+            )
+    except Exception as exc:
+        if api_client and not args.skip_events:
+            api_client.send_event(
+                "failed",
+                kinds=kinds,
+                message=f"Import fehlgeschlagen: {exc}",
+                source=args.import_source,
+            )
+        raise
 
 if __name__ == "__main__":
     main()

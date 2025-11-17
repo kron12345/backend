@@ -1094,3 +1094,572 @@ schemas:
         nullable: true
     required:
     - scope
+  LatLng:
+    type: object
+    properties:
+      lat:
+        type: number
+        format: double
+      lng:
+        type: number
+        format: double
+    required:
+    - lat
+    - lng
+  TopologyAttribute:
+    type: object
+    properties:
+      key:
+        type: string
+      value:
+        type: string
+      validFrom:
+        type: string
+        format: date
+        nullable: true
+    required:
+    - key
+    - value
+  OperationalPoint:
+    type: object
+    properties:
+      opId:
+        type: string
+      uniqueOpId:
+        type: string
+      countryCode:
+        type: string
+      name:
+        type: string
+      opType:
+        type: string
+      position:
+        $ref: '#/components/schemas/LatLng'
+      attributes:
+        type: array
+        items:
+          $ref: '#/components/schemas/TopologyAttribute'
+      createdAt:
+        type: string
+        format: date-time
+        nullable: true
+      createdBy:
+        type: string
+        nullable: true
+      updatedAt:
+        type: string
+        format: date-time
+        nullable: true
+      updatedBy:
+        type: string
+        nullable: true
+    required:
+    - opId
+    - uniqueOpId
+    - countryCode
+    - name
+    - opType
+    - position
+  OperationalPointListRequest:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/OperationalPoint'
+    required:
+    - items
+  SectionOfLine:
+    type: object
+    properties:
+      solId:
+        type: string
+      startUniqueOpId:
+        type: string
+      endUniqueOpId:
+        type: string
+      lengthKm:
+        type: number
+        format: double
+        nullable: true
+      nature:
+        type: string
+        enum:
+        - REGULAR
+        - LINK
+      polyline:
+        type: array
+        items:
+          $ref: '#/components/schemas/LatLng'
+      attributes:
+        type: array
+        items:
+          $ref: '#/components/schemas/TopologyAttribute'
+      createdAt:
+        type: string
+        format: date-time
+        nullable: true
+      createdBy:
+        type: string
+        nullable: true
+      updatedAt:
+        type: string
+        format: date-time
+        nullable: true
+      updatedBy:
+        type: string
+        nullable: true
+    required:
+    - solId
+    - startUniqueOpId
+    - endUniqueOpId
+    - nature
+  SectionOfLineListRequest:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/SectionOfLine'
+    required:
+    - items
+  PersonnelSite:
+    type: object
+    properties:
+      siteId:
+        type: string
+      siteType:
+        type: string
+        enum:
+        - MELDESTELLE
+        - PAUSENRAUM
+        - BEREITSCHAFT
+        - "B\xDCRO"
+      name:
+        type: string
+      uniqueOpId:
+        type: string
+        nullable: true
+      position:
+        $ref: '#/components/schemas/LatLng'
+      openingHoursJson:
+        type: string
+        nullable: true
+      attributes:
+        type: array
+        items:
+          $ref: '#/components/schemas/TopologyAttribute'
+      createdAt:
+        type: string
+        format: date-time
+        nullable: true
+      createdBy:
+        type: string
+        nullable: true
+      updatedAt:
+        type: string
+        format: date-time
+        nullable: true
+      updatedBy:
+        type: string
+        nullable: true
+    required:
+    - siteId
+    - siteType
+    - name
+    - position
+  PersonnelSiteListRequest:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/PersonnelSite'
+    required:
+    - items
+  ReplacementStop:
+    type: object
+    properties:
+      replacementStopId:
+        type: string
+      name:
+        type: string
+      stopCode:
+        type: string
+        nullable: true
+      position:
+        $ref: '#/components/schemas/LatLng'
+      nearestUniqueOpId:
+        type: string
+        nullable: true
+      attributes:
+        type: array
+        items:
+          $ref: '#/components/schemas/TopologyAttribute'
+      createdAt:
+        type: string
+        format: date-time
+        nullable: true
+      createdBy:
+        type: string
+        nullable: true
+      updatedAt:
+        type: string
+        format: date-time
+        nullable: true
+      updatedBy:
+        type: string
+        nullable: true
+    required:
+    - replacementStopId
+    - name
+    - position
+  ReplacementStopListRequest:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/ReplacementStop'
+    required:
+    - items
+  ReplacementRoute:
+    type: object
+    properties:
+      replacementRouteId:
+        type: string
+      name:
+        type: string
+      operator:
+        type: string
+        nullable: true
+      attributes:
+        type: array
+        items:
+          $ref: '#/components/schemas/TopologyAttribute'
+      createdAt:
+        type: string
+        format: date-time
+        nullable: true
+      createdBy:
+        type: string
+        nullable: true
+      updatedAt:
+        type: string
+        format: date-time
+        nullable: true
+      updatedBy:
+        type: string
+        nullable: true
+    required:
+    - replacementRouteId
+    - name
+  ReplacementRouteListRequest:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/ReplacementRoute'
+    required:
+    - items
+  ReplacementEdge:
+    type: object
+    properties:
+      replacementEdgeId:
+        type: string
+      replacementRouteId:
+        type: string
+      fromStopId:
+        type: string
+      toStopId:
+        type: string
+      seq:
+        type: integer
+      avgDurationSec:
+        type: integer
+        nullable: true
+      distanceM:
+        type: integer
+        nullable: true
+      polyline:
+        type: array
+        items:
+          $ref: '#/components/schemas/LatLng'
+      attributes:
+        type: array
+        items:
+          $ref: '#/components/schemas/TopologyAttribute'
+      createdAt:
+        type: string
+        format: date-time
+        nullable: true
+      createdBy:
+        type: string
+        nullable: true
+      updatedAt:
+        type: string
+        format: date-time
+        nullable: true
+      updatedBy:
+        type: string
+        nullable: true
+    required:
+    - replacementEdgeId
+    - replacementRouteId
+    - fromStopId
+    - toStopId
+    - seq
+  ReplacementEdgeListRequest:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/ReplacementEdge'
+    required:
+    - items
+  OpReplacementStopLink:
+    type: object
+    properties:
+      linkId:
+        type: string
+      uniqueOpId:
+        type: string
+      replacementStopId:
+        type: string
+      relationType:
+        type: string
+        enum:
+        - PRIMARY_SEV_STOP
+        - ALTERNATIVE
+        - TEMPORARY
+      walkingTimeSec:
+        type: integer
+        nullable: true
+      distanceM:
+        type: integer
+        nullable: true
+      attributes:
+        type: array
+        items:
+          $ref: '#/components/schemas/TopologyAttribute'
+      createdAt:
+        type: string
+        format: date-time
+        nullable: true
+      createdBy:
+        type: string
+        nullable: true
+      updatedAt:
+        type: string
+        format: date-time
+        nullable: true
+      updatedBy:
+        type: string
+        nullable: true
+    required:
+    - linkId
+    - uniqueOpId
+    - replacementStopId
+    - relationType
+  OpReplacementStopLinkListRequest:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/OpReplacementStopLink'
+    required:
+    - items
+  TransferNodeOperationalPoint:
+    type: object
+    properties:
+      kind:
+        type: string
+        enum:
+        - OP
+      uniqueOpId:
+        type: string
+    required:
+    - kind
+    - uniqueOpId
+    additionalProperties: false
+  TransferNodePersonnelSite:
+    type: object
+    properties:
+      kind:
+        type: string
+        enum:
+        - PERSONNEL_SITE
+      siteId:
+        type: string
+    required:
+    - kind
+    - siteId
+    additionalProperties: false
+  TransferNodeReplacementStop:
+    type: object
+    properties:
+      kind:
+        type: string
+        enum:
+        - REPLACEMENT_STOP
+      replacementStopId:
+        type: string
+    required:
+    - kind
+    - replacementStopId
+    additionalProperties: false
+  TransferNode:
+    oneOf:
+    - $ref: '#/components/schemas/TransferNodeOperationalPoint'
+    - $ref: '#/components/schemas/TransferNodePersonnelSite'
+    - $ref: '#/components/schemas/TransferNodeReplacementStop'
+    discriminator:
+      propertyName: kind
+      mapping:
+        OP: '#/components/schemas/TransferNodeOperationalPoint'
+        PERSONNEL_SITE: '#/components/schemas/TransferNodePersonnelSite'
+        REPLACEMENT_STOP: '#/components/schemas/TransferNodeReplacementStop'
+  TransferEdge:
+    type: object
+    properties:
+      transferId:
+        type: string
+      from:
+        $ref: '#/components/schemas/TransferNode'
+      to:
+        $ref: '#/components/schemas/TransferNode'
+      mode:
+        type: string
+        enum:
+        - WALK
+        - SHUTTLE
+        - INTERNAL
+      avgDurationSec:
+        type: integer
+        nullable: true
+      distanceM:
+        type: integer
+        nullable: true
+      bidirectional:
+        type: boolean
+      attributes:
+        type: array
+        items:
+          $ref: '#/components/schemas/TopologyAttribute'
+      createdAt:
+        type: string
+        format: date-time
+        nullable: true
+      createdBy:
+        type: string
+        nullable: true
+      updatedAt:
+        type: string
+        format: date-time
+        nullable: true
+      updatedBy:
+        type: string
+        nullable: true
+    required:
+    - transferId
+    - from
+    - to
+    - mode
+    - bidirectional
+  TransferEdgeListRequest:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/components/schemas/TransferEdge'
+    required:
+    - items
+  TopologyImportRequest:
+    type: object
+    properties:
+      kinds:
+        type: array
+        items:
+          type: string
+          enum:
+          - operational-points
+          - sections-of-line
+          - personnel-sites
+          - replacement-stops
+          - replacement-routes
+          - replacement-edges
+          - op-replacement-stop-links
+          - transfer-edges
+  TopologyImportResponse:
+    type: object
+    properties:
+      startedAt:
+        type: string
+        format: date-time
+      requestedKinds:
+        type: array
+        items:
+          type: string
+          enum:
+          - operational-points
+          - sections-of-line
+          - personnel-sites
+          - replacement-stops
+          - replacement-routes
+          - replacement-edges
+          - op-replacement-stop-links
+          - transfer-edges
+      message:
+        type: string
+        nullable: true
+    required:
+    - startedAt
+    - requestedKinds
+  TopologyImportStatus:
+    type: string
+    enum:
+    - queued
+    - in-progress
+    - succeeded
+    - failed
+    - ignored
+  TopologyImportEventRequest:
+    type: object
+    properties:
+      status:
+        $ref: '#/components/schemas/TopologyImportStatus'
+      kinds:
+        type: array
+        items:
+          type: string
+          enum:
+          - operational-points
+          - sections-of-line
+          - personnel-sites
+          - replacement-stops
+          - replacement-routes
+          - replacement-edges
+          - op-replacement-stop-links
+          - transfer-edges
+      message:
+        type: string
+        nullable: true
+      source:
+        type: string
+        nullable: true
+    required:
+    - status
+  TopologyImportRealtimeEvent:
+    allOf:
+    - $ref: '#/components/schemas/TopologyImportEventRequest'
+    - type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+      required:
+      - timestamp

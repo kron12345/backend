@@ -5,6 +5,7 @@ import { PlanningService } from './planning.service';
 import { PlanningRepository } from './planning.repository';
 import { PlanningBaseController } from './planning-base.controller';
 import { PlanningOperationsController } from './planning-operations.controller';
+import { PlanningTopologyController } from './planning-topology.controller';
 import { PlanWeekService } from './plan-week.service';
 import { PlanWeekRepository } from './plan-week.repository';
 
@@ -14,6 +15,7 @@ import { PlanWeekRepository } from './plan-week.repository';
     PlanningMasterDataController,
     PlanningBaseController,
     PlanningOperationsController,
+    PlanningTopologyController,
   ],
   providers: [PlanningService, PlanningRepository, PlanWeekService, PlanWeekRepository],
   exports: [PlanningService, PlanWeekService],

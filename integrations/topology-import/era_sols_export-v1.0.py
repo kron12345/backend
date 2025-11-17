@@ -13,14 +13,17 @@ ERA SoL exporter (All-in-One v1.4)
 """
 
 from __future__ import annotations
-import argparse, csv, random, time, json
+import argparse, csv, random, time, json, re, uuid
 from typing import Any, Dict, Iterable, List, Tuple
 from urllib.parse import unquote, urlparse
 import requests
 
+from topology_client import TopologyAPIClient, resolve_api_base
+
 SPARQL_ENDPOINT   = "https://prod.virtuoso.ecdp.tech.ec.europa.eu/sparql"
 GRAPH_RINF        = "http://data.europa.eu/949/graph/rinf"
 SOL_BASE_DEFAULT  = "http://data.europa.eu/949/functionalInfrastructure/sectionsOfLine/"
+SOL_NAMESPACE = uuid.UUID("1b085a6b-3fd1-4b03-9bc4-5f8b793ef872")
 
 PREFIXES = """\
 PREFIX era:  <http://data.europa.eu/949/>
@@ -34,6 +37,36 @@ CSV_HEADER = [
     "TDA_MAX_SPEED","TDA_PROTECTION_LEGACY_SYSTEM","TDA_COMMUICATION_INFRASTRUCTURE",
     "TDA_ETCS_LEVEL","TDA_TSI_PANTOGRAPH_HEAD","TDA_OTHER_PANTOGRAPH_HEAD","TDA_CONTACT_LINE_SYSTEM","TDA_CONTACT_FORCE_PERMITTED","TDA_GRADIENT_PROFILE","URL"
 ]
+
+
+def normalize_attribute_key(name: str) -> str:
+    tokens = re.split(r"[^A-Za-z0-9]+", name)
+    tokens = [token for token in tokens if token]
+    if not tokens:
+        return name.lower()
+    first = tokens[0].lower()
+    rest = [token.capitalize() for token in tokens[1:]]
+    return first + "".join(rest)
+
+def build_normalizer(prefix: str | None, fill: str) -> callable:
+    if not prefix:
+        return lambda value: value
+    fill = fill or ""
+    if fill:
+        pattern = re.compile(
+            r'^' + re.escape(prefix) + r'(?:' + re.escape(fill) + r')*(.+)$',
+        )
+    else:
+        pattern = re.compile(r'^' + re.escape(prefix) + r'(.+)$')
+
+    def normalize(value: str | None) -> str | None:
+        if value is None:
+            return None
+        s = str(value).strip()
+        match = pattern.match(s)
+        return match.group(1) if match else s
+
+    return normalize
 
 def sha1(s: str) -> str:
     import hashlib as _h
@@ -517,16 +550,6 @@ def make_human_id(attribute_line: str, from_id: str, to_id: str, sol_uri: str) -
     return "_".join([p for p in parts if p]) or sha1(sol_uri)[:12]
 
 
-def write_rows(outfile, rows: Iterable[List[str]], write_header: bool, csv_bom: bool):
-    mode = "w" if write_header else "a"
-    open_kwargs = {"newline":"","encoding":"utf-8-sig" if (csv_bom and write_header) else "utf-8"}
-    with open(outfile, mode, **open_kwargs) as f:
-        w = csv.writer(f, delimiter=";", lineterminator="\n", quoting=csv.QUOTE_MINIMAL)
-        if write_header:
-            w.writerow(CSV_HEADER)
-        for r in rows:
-            w.writerow(r)
-
 # --- orchestrator ---
 
 def export_sharded(iso3, outfile, sol_base, sol_prefixes,
@@ -534,8 +557,17 @@ def export_sharded(iso3, outfile, sol_base, sol_prefixes,
                    ep_batch, ep_min, meta_batch, meta_min, op_batch, op_min,
                    trdir_batch, trdir_min, trprop_batch, trprop_min,
                    endpoint, csv_bom, skip_on_timeout,
-                   limit_sols, label_batch, label_min):
-    total_rows=0; first=True
+                   limit_sols, label_batch, label_min,
+                   *, api_client: TopologyAPIClient | None = None,
+                   normalize_prefix: str | None = None,
+                   normalize_fillchar: str = "0"):
+    sink = SectionOfLineSink(
+        outfile,
+        csv_bom=csv_bom,
+        api_client=api_client,
+        normalize_prefix=normalize_prefix,
+        normalize_fillchar=normalize_fillchar,
+    )
     consumed = 0
     with requests.Session() as session:
         for pfx in sol_prefixes or [""]:
@@ -647,7 +679,6 @@ def export_sharded(iso3, outfile, sol_base, sol_prefixes,
             labels_map = fetch_labels_for_uris(session, uniq_uris, timeout, retries, endpoint, label_batch, label_min, skip_on_timeout)
 
             # Output rows
-            rows=[]
             for s in sols:
                 e = endpoints.get(s,{})
 
@@ -696,23 +727,127 @@ def export_sharded(iso3, outfile, sol_base, sol_prefixes,
                          from_id, to_id, s)
 
                 # not_active (compat) and active rows
-                rows.append([
+                sink.write_csv_only([
                     "1900-01-01", human_id, sol_name, "true",
                     owner, iso3, from_id, to_id, length,
                     nat_lbl, classCat, kv, gauge, vmax, prot, gsm, etcs, tsiH, othH, colS, peCF, grPo, s
                 ])
                 vfrom = e.get("validFrom","") or "1900-01-01"
-                rows.append([
+                sink.write([
                     vfrom, human_id, sol_name, "false",
                     owner, iso3, from_id, to_id, length,
                     nat_lbl, classCat, kv, gauge, vmax, prot, gsm, etcs, tsiH, othH, colS, peCF, grPo, s
                 ])
 
-            write_rows(outfile, rows, write_header=first, csv_bom=csv_bom)
-            first = False; total_rows += len(rows); consumed += len(sols)
-            print(f"[done] shard '{pfx or '*'}' wrote {len(rows)} rows (total {total_rows})")
+            consumed += len(sols)
+            print(f"[done] shard '{pfx or '*'}' processed {len(sols)} SoLs (total {sink.record_count})")
 
-    print(f"\n[done] wrote {outfile} rows~{total_rows})")
+    sink.finish()
+    if outfile:
+        print(f"\n[done] wrote CSV to {outfile}")
+    if api_client:
+        print(f"[done] uploaded {sink.record_count} sections of line via API")
+
+class SectionOfLineSink:
+    EXCLUDED_ATTR_COLUMNS = {"validFrom"}
+
+    def __init__(
+        self,
+        csv_path: str | None,
+        *,
+        csv_bom: bool,
+        api_client: TopologyAPIClient | None,
+        normalize_prefix: str | None,
+        normalize_fillchar: str,
+    ):
+        self.api_client = api_client
+        self.records: List[dict] = []
+        self.record_count = 0
+        self._normalize = build_normalizer(normalize_prefix, normalize_fillchar)
+        self._file = None
+        self._writer = None
+        if csv_path:
+            encoding = "utf-8-sig" if csv_bom else "utf-8"
+            self._file = open(csv_path, "w", newline="", encoding=encoding)
+            self._writer = csv.writer(
+                self._file,
+                delimiter=";",
+                lineterminator="\n",
+                quoting=csv.QUOTE_MINIMAL,
+            )
+            self._writer.writerow(CSV_HEADER)
+
+    def write_csv_only(self, row: List[str]) -> None:
+        if self._writer:
+            self._writer.writerow(row)
+
+    def write(self, row: List[str]) -> None:
+        if self._writer:
+            self._writer.writerow(row)
+        converted = self._convert_row(row)
+        self.records.append(converted)
+        self.record_count += 1
+
+    def finish(self) -> None:
+        if self._file:
+            self._file.close()
+        if self.api_client and self.records:
+            self.api_client.replace_sections_of_line(self.records)
+
+    def _convert_row(self, row: List[str]) -> dict:
+        row_dict = {CSV_HEADER[i]: row[i] if i < len(row) else "" for i in range(len(CSV_HEADER))}
+        raw_id = row_dict.get("ID") or ""
+        unique_sol_id = self._normalize(raw_id) or raw_id
+        sol_uuid = str(uuid.uuid5(SOL_NAMESPACE, unique_sol_id))
+        start_raw = row_dict.get("FROM") or ""
+        end_raw = row_dict.get("TO") or ""
+        start_id = self._normalize(start_raw) or start_raw
+        end_id = self._normalize(end_raw) or end_raw
+        length_val = row_dict.get("LENGTH")
+        try:
+            length_km = float(length_val) if length_val else None
+        except ValueError:
+            length_km = None
+
+        record: dict = {
+            "solId": sol_uuid,
+            "uniqueSolId": unique_sol_id,
+            "startUniqueOpId": start_id,
+            "endUniqueOpId": end_id,
+        }
+        valid_from = row_dict.get("VALID_FROM") or ""
+        attributes: List[dict] = []
+        for key, value in row_dict.items():
+            key_norm = normalize_attribute_key(key)
+            if key_norm in self.EXCLUDED_ATTR_COLUMNS or key_norm == "validFrom":
+                continue
+            attr_value = value
+            if key_norm == "id":
+                attr_value = unique_sol_id
+            elif key_norm == "from":
+                key_norm = "startUniqueOpId"
+                attr_value = start_id
+            elif key_norm == "to":
+                key_norm = "endUniqueOpId"
+                attr_value = end_id
+            elif key_norm == "length":
+                key_norm = "lengthKm"
+                attr_value = length_km if length_km is not None else value
+            if attr_value is None or (isinstance(attr_value, str) and attr_value == ""):
+                continue
+            attr_dict = {"key": key_norm, "value": str(attr_value)}
+            if valid_from:
+                attr_dict["validFrom"] = valid_from
+            attributes.append(attr_dict)
+
+        nature_attr = {"key": "nature", "value": "REGULAR"}
+        if valid_from:
+            nature_attr["validFrom"] = valid_from
+        attributes.append(nature_attr)
+
+        if attributes:
+            record["attributes"] = attributes
+        return record
 
 # --- CLI ---
 def parse_prefixes(p: str) -> List[str]:
@@ -723,7 +858,7 @@ def parse_prefixes(p: str) -> List[str]:
 def main():
     ap = argparse.ArgumentParser(description="Export ERA SoLs (All-in-One v1.4)")
     ap.add_argument("--country", required=True, help="ISO3, e.g. DEU")
-    ap.add_argument("--outfile", required=True)
+    ap.add_argument("--outfile", help="Optional CSV Pfad (legacy).")
     ap.add_argument("--sol-base", default=SOL_BASE_DEFAULT)
     ap.add_argument("--sol-prefixes", default="")
     ap.add_argument("--page-size", type=int, default=1500)
@@ -754,25 +889,64 @@ def main():
     ap.add_argument("--skip-on-timeout", action="store_true")
 
     ap.add_argument("--limit-sols", type=int, default=0, help="process at most N SoLs (0=no limit)")
+    ap.add_argument("--api-base", help="Backend API Basis (z. B. http://localhost:3000/api/v1). Defaults zu $TOPOLOGY_API_BASE.")
+    ap.add_argument("--api-timeout", type=int, default=120)
+    ap.add_argument("--import-source", default="era_sols_export")
+    ap.add_argument("--skip-events", action="store_true")
+    ap.add_argument("--normalize-prefix", help="Optionales Prefix zur Normalisierung (z. B. DE).")
+    ap.add_argument("--normalize-fillchar", default="0")
 
     args = ap.parse_args()
 
-    export_sharded(
-        iso3=args.country.upper(),
-        outfile=args.outfile,
-        sol_base=args.sol_base,
-        sol_prefixes=parse_prefixes(args.sol_prefixes),
-        page_size=args.page_size, min_page_size=args.min_page_size,
-        timeout=args.timeout, retries=args.retries,
-        ep_batch=args.batch_endpoints, ep_min=args.min_batch_endpoints,
-        meta_batch=args.batch_meta, meta_min=args.min_batch_meta,
-        op_batch=args.batch_opids, op_min=args.min_batch_opids,
-        trdir_batch=args.batch_track_dirs, trdir_min=args.min_batch_track_dirs,
-        trprop_batch=args.batch_track_prop, trprop_min=args.min_batch_track_prop,
-        endpoint=args.endpoint_url, csv_bom=args.csv_bom, skip_on_timeout=args.skip_on_timeout,
-        limit_sols=args.limit_sols,
-        label_batch=args.batch_labels, label_min=args.min_batch_labels
-    )
+    api_base = resolve_api_base(args.api_base)
+    if not api_base and not args.outfile:
+        ap.error("Either --outfile oder --api-base (oder TOPOLOGY_API_BASE) muss angegeben werden.")
+    api_client = TopologyAPIClient(api_base, timeout=args.api_timeout) if api_base else None
+    kinds = ["sections-of-line"]
+    try:
+        if api_client and not args.skip_events:
+            api_client.send_event(
+                "in-progress",
+                kinds=kinds,
+                message=f"SoL-Import {args.country.upper()} gestartet",
+                source=args.import_source,
+            )
+        export_sharded(
+            iso3=args.country.upper(),
+            outfile=args.outfile,
+            sol_base=args.sol_base,
+            sol_prefixes=parse_prefixes(args.sol_prefixes),
+            page_size=args.page_size, min_page_size=args.min_page_size,
+            timeout=args.timeout, retries=args.retries,
+            ep_batch=args.batch_endpoints, ep_min=args.min_batch_endpoints,
+            meta_batch=args.batch_meta, meta_min=args.min_batch_meta,
+            op_batch=args.batch_opids, op_min=args.min_batch_opids,
+            trdir_batch=args.batch_track_dirs, trdir_min=args.min_batch_track_dirs,
+            trprop_batch=args.batch_track_prop, trprop_min=args.min_batch_track_prop,
+            endpoint=args.endpoint_url, csv_bom=args.csv_bom, skip_on_timeout=args.skip_on_timeout,
+            limit_sols=args.limit_sols,
+            label_batch=args.batch_labels, label_min=args.min_batch_labels,
+            api_client=api_client,
+            normalize_prefix=args.normalize_prefix,
+            normalize_fillchar=args.normalize_fillchar,
+        )
+        if api_client and not args.skip_events:
+            api_client.send_event(
+                "succeeded",
+                kinds=kinds,
+                message=f"SoL-Import {args.country.upper()} abgeschlossen",
+                source=args.import_source,
+            )
+    except Exception as exc:
+        if api_client and not args.skip_events:
+            api_client.send_event(
+                "failed",
+                kinds=kinds,
+                message=f"SoL-Import fehlgeschlagen: {exc}",
+                source=args.import_source,
+            )
+        raise
+
 
 if __name__ == "__main__":
     main()
