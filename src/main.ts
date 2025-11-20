@@ -14,7 +14,11 @@ async function bootstrap() {
   await fastifyAdapter.register(fastifySse);
   const app = await NestFactory.create(AppModule, fastifyAdapter);
   app.setGlobalPrefix('api/v1');
-  const allowedOrigins = [/^https?:\/\/localhost(?::\d+)?$/, /\.animeland\.de$/];
+  const allowedOrigins = [
+    /^https?:\/\/localhost(?::\d+)?$/,
+    /\.animeland\.de$/,
+    /^https:\/\/qnamic\.ortwein\.chat$/,
+  ];
   app.enableCors({
     origin: (origin, callback) => {
       if (!origin) {
