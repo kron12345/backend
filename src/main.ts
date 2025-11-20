@@ -10,10 +10,22 @@ import fastifySse from 'fastify-sse-v2';
 import yaml from 'js-yaml';
 
 async function bootstrap() {
+  const apiPrefix = 'api/v1';
   const fastifyAdapter = new FastifyAdapter();
   await fastifyAdapter.register(fastifySse);
   const app = await NestFactory.create(AppModule, fastifyAdapter);
-  app.setGlobalPrefix('api/v1');
+  fastifyAdapter.getInstance().addHook('onRequest', (request, _reply, done) => {
+    const originalUrl = request.raw.url ?? '/';
+    const collapsed = originalUrl.replace(/^\/{2,}/, '/');
+    // Allow proxies that strip the /api prefix and clean up double slashes.
+    if (collapsed === '/v1' || collapsed.startsWith('/v1/')) {
+      request.raw.url = `/${apiPrefix}${collapsed.slice('/v1'.length)}`;
+    } else {
+      request.raw.url = collapsed;
+    }
+    done();
+  });
+  app.setGlobalPrefix(apiPrefix);
   const allowedOrigins = [
     /^https?:\/\/localhost(?::\d+)?$/,
     /\.animeland\.de$/,
