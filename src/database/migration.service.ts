@@ -14,14 +14,20 @@ interface MigrationFile {
 @Injectable()
 export class MigrationService implements OnModuleInit {
   private readonly logger = new Logger(MigrationService.name);
-  private readonly migrationsDir = path.join(process.cwd(), 'sql', 'migrations');
+  private readonly migrationsDir = path.join(
+    process.cwd(),
+    'sql',
+    'migrations',
+  );
   private readonly tableName = 'planning_schema_migration';
 
   constructor(private readonly database: DatabaseService) {}
 
   async onModuleInit() {
     if (!this.database.enabled) {
-      this.logger.log('Database connection not configured, skipping migrations');
+      this.logger.log(
+        'Database connection not configured, skipping migrations',
+      );
       return;
     }
     await this.runMigrations();
@@ -156,7 +162,9 @@ export class MigrationService implements OnModuleInit {
     if (!applied.size) {
       return [];
     }
-    const migrationMap = new Map(migrations.map((migration) => [migration.filename, migration]));
+    const migrationMap = new Map(
+      migrations.map((migration) => [migration.filename, migration]),
+    );
     const mismatches: string[] = [];
     applied.forEach((checksum, filename) => {
       const migration = migrationMap.get(filename);

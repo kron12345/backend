@@ -133,8 +133,8 @@ export class PlanningTopologyController {
 
   @Sse('import/events')
   streamImportEvents(): Observable<MessageEvent> {
-    return this.planningService.streamTopologyImportEvents().pipe(
-      map((event) => ({ data: event })),
-    );
+    return this.planningService
+      .streamTopologyImportEvents()
+      .pipe(map((event) => ({ data: event })));
   }
 }

@@ -7,7 +7,10 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Observable, Subject } from 'rxjs';
-import { PlanWeekRepository, UpsertPlanWeekTemplateInput } from './plan-week.repository';
+import {
+  PlanWeekRepository,
+  UpsertPlanWeekTemplateInput,
+} from './plan-week.repository';
 import {
   PlanWeekRealtimeEvent,
   PlanWeekRolloutRequest,
@@ -95,7 +98,10 @@ export class PlanWeekService {
 
   async deleteValidity(templateId: string, validityId: string): Promise<void> {
     await this.getTemplateOrThrow(templateId);
-    const removed = await this.repository.deleteValidity(templateId, validityId);
+    const removed = await this.repository.deleteValidity(
+      templateId,
+      validityId,
+    );
     if (!removed) {
       throw new NotFoundException(
         `Validity ${validityId} does not exist for template ${templateId}.`,
@@ -156,7 +162,9 @@ export class PlanWeekService {
     const startDate = this.ensureDateOnly(request.weekStartIso, 'weekStartIso');
     const weekStarts: string[] = [];
     const skipCodes = new Set(
-      (request.skipWeekCodes ?? []).map((code) => code.trim().toUpperCase()).filter(Boolean),
+      (request.skipWeekCodes ?? [])
+        .map((code) => code.trim().toUpperCase())
+        .filter(Boolean),
     );
 
     for (let i = 0; i < request.weekCount; i += 1) {
@@ -191,7 +199,11 @@ export class PlanWeekService {
         templateId: template.id,
         weekStartIso,
         templateVersion: template.version,
-        services: this.createScheduledServices(template, weekStartIso, instanceId),
+        services: this.createScheduledServices(
+          template,
+          weekStartIso,
+          instanceId,
+        ),
         assignments: [],
         status: 'planned',
       };
@@ -208,14 +220,16 @@ export class PlanWeekService {
     return { createdInstances: summaries };
   }
 
-  streamTemplateEvents(
-    templateId?: string,
-  ): Observable<PlanWeekRealtimeEvent> {
+  streamTemplateEvents(templateId?: string): Observable<PlanWeekRealtimeEvent> {
     this.assertDatabaseEnabled();
     return new Observable<PlanWeekRealtimeEvent>((subscriber) => {
       const subscription = this.templateEvents.subscribe({
         next: (event) => {
-          if (templateId && event.templateId && event.templateId !== templateId) {
+          if (
+            templateId &&
+            event.templateId &&
+            event.templateId !== templateId
+          ) {
             return;
           }
           subscriber.next(event);
@@ -263,7 +277,9 @@ export class PlanWeekService {
     this.assertDatabaseEnabled();
     const instance = await this.repository.getWeekInstance(weekInstanceId);
     if (!instance) {
-      throw new NotFoundException(`Week instance ${weekInstanceId} does not exist.`);
+      throw new NotFoundException(
+        `Week instance ${weekInstanceId} does not exist.`,
+      );
     }
     return instance;
   }
@@ -313,13 +329,19 @@ export class PlanWeekService {
     this.assertDatabaseEnabled();
     const instance = await this.repository.getWeekInstance(weekInstanceId);
     if (!instance) {
-      throw new NotFoundException(`Week instance ${weekInstanceId} does not exist.`);
+      throw new NotFoundException(
+        `Week instance ${weekInstanceId} does not exist.`,
+      );
     }
     const removed = await this.repository.deleteWeekInstance(weekInstanceId);
     if (!removed) {
-      throw new NotFoundException(`Week instance ${weekInstanceId} does not exist.`);
+      throw new NotFoundException(
+        `Week instance ${weekInstanceId} does not exist.`,
+      );
     }
-    this.emitEvent('rollout', instance.templateId, { deleteIds: [weekInstanceId] });
+    this.emitEvent('rollout', instance.templateId, {
+      deleteIds: [weekInstanceId],
+    });
   }
 
   private normalizeTemplatePayload(
@@ -340,7 +362,9 @@ export class PlanWeekService {
       );
       const end = this.ensureDateOnly(slice.endIso, `slices[${index}].endIso`);
       if (start > end) {
-        throw new BadRequestException('slice startIso must be on or before endIso.');
+        throw new BadRequestException(
+          'slice startIso must be on or before endIso.',
+        );
       }
       return {
         id: slice.id ?? randomUUID(),
@@ -363,7 +387,9 @@ export class PlanWeekService {
 
   private assertSliceId(value?: string): string {
     if (!value) {
-      throw new BadRequestException('sliceId is required for every scheduled service.');
+      throw new BadRequestException(
+        'sliceId is required for every scheduled service.',
+      );
     }
     return value;
   }
@@ -377,7 +403,9 @@ export class PlanWeekService {
     const validFrom = this.ensureDateOnly(payload.validFromIso, 'validFromIso');
     const validTo = this.ensureDateOnly(payload.validToIso, 'validToIso');
     if (validFrom > validTo) {
-      throw new BadRequestException('validFromIso must be on or before validToIso.');
+      throw new BadRequestException(
+        'validFromIso must be on or before validToIso.',
+      );
     }
     return {
       id: validityId,
@@ -386,7 +414,7 @@ export class PlanWeekService {
       validToIso: validTo.toISOString().slice(0, 10),
       includeWeekNumbers: payload.includeWeekNumbers ?? undefined,
       excludeWeekNumbers: payload.excludeWeekNumbers ?? undefined,
-      status: normalizedStatus as PlanWeekValidityStatus,
+      status: normalizedStatus,
     };
   }
 
@@ -396,7 +424,10 @@ export class PlanWeekService {
     payload: PlanWeekActivity,
   ): PlanWeekActivity {
     const start = this.ensureDateTime(payload.startIso, 'startIso');
-    const end = payload.endIso == null ? undefined : this.ensureDateTime(payload.endIso, 'endIso');
+    const end =
+      payload.endIso == null
+        ? undefined
+        : this.ensureDateTime(payload.endIso, 'endIso');
     if (end && start > end) {
       throw new BadRequestException('endIso must be on or after startIso.');
     }
@@ -404,7 +435,9 @@ export class PlanWeekService {
       throw new BadRequestException('title is required.');
     }
     if (!payload.participants || payload.participants.length === 0) {
-      throw new BadRequestException('participants must contain at least one entry.');
+      throw new BadRequestException(
+        'participants must contain at least one entry.',
+      );
     }
     return {
       id: activityId,
@@ -480,15 +513,15 @@ export class PlanWeekService {
   }
 
   private computeIsoWeekCode(date: Date): string {
-    const clone = new Date(Date.UTC(
-      date.getUTCFullYear(),
-      date.getUTCMonth(),
-      date.getUTCDate(),
-    ));
+    const clone = new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+    );
     const day = clone.getUTCDay() || 7;
     clone.setUTCDate(clone.getUTCDate() + 4 - day);
     const yearStart = new Date(Date.UTC(clone.getUTCFullYear(), 0, 1));
-    const weekNumber = Math.ceil(((clone.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+    const weekNumber = Math.ceil(
+      ((clone.getTime() - yearStart.getTime()) / 86400000 + 1) / 7,
+    );
     return `${clone.getUTCFullYear()}-W${weekNumber.toString().padStart(2, '0')}`;
   }
 
@@ -498,10 +531,16 @@ export class PlanWeekService {
     }
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
-      throw new BadRequestException(`${label} must be an ISO date (YYYY-MM-DD).`);
+      throw new BadRequestException(
+        `${label} must be an ISO date (YYYY-MM-DD).`,
+      );
     }
     return new Date(
-      Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()),
+      Date.UTC(
+        parsed.getUTCFullYear(),
+        parsed.getUTCMonth(),
+        parsed.getUTCDate(),
+      ),
     );
   }
 
@@ -545,7 +584,9 @@ export class PlanWeekService {
     }
   }
 
-  private async getTemplateOrThrow(templateId: string): Promise<PlanWeekTemplate> {
+  private async getTemplateOrThrow(
+    templateId: string,
+  ): Promise<PlanWeekTemplate> {
     this.assertDatabaseEnabled();
     const template = await this.repository.getTemplate(templateId);
     if (!template) {

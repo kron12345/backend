@@ -81,9 +81,7 @@ export class PlanningController {
   ): Observable<MessageEvent> {
     return this.planningService
       .streamStageEvents(stageId, userId ?? clientId, connectionId)
-      .pipe(
-        map((data) => ({ data })),
-      );
+      .pipe(map((data) => ({ data })));
   }
 
   private normalizeResourceIds(

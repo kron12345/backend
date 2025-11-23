@@ -105,8 +105,8 @@ export class PlanningBaseController {
     @Query('userId') _userId?: string,
     @Query('connectionId') _connectionId?: string,
   ): Observable<MessageEvent> {
-    return this.planWeekService.streamTemplateEvents(templateId).pipe(
-      map((data) => ({ data })),
-    );
+    return this.planWeekService
+      .streamTemplateEvents(templateId)
+      .pipe(map((data) => ({ data })));
   }
 }

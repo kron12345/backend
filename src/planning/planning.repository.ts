@@ -2,8 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import {
   Activity,
+  ActivityDefinition,
+  ActivityTemplate,
+  ActivityTypeDefinition,
+  LayerGroup,
   PersonnelPool,
   PersonnelServicePool,
+  Personnel,
+  PersonnelService,
   Resource,
   StageId,
   TimelineRange,
@@ -21,7 +27,13 @@ import {
   VehiclePool,
   VehicleServicePool,
   VehicleType,
+  TranslationState,
+  ResourceKind,
+  ActivityFieldKey,
+  Vehicle,
+  VehicleService,
 } from './planning.types';
+import { randomUUID } from 'crypto';
 
 interface StageRow {
   stage_id: string;
@@ -74,6 +86,52 @@ interface ActivityRow {
   meta: Record<string, unknown> | null;
 }
 
+interface ActivityTypeDefinitionRow {
+  id: string;
+  label: string;
+  description: string | null;
+  applies_to: string[];
+  relevant_for: string[];
+  category: string;
+  time_mode: string;
+  fields: string[];
+  default_duration_minutes: number;
+}
+
+interface ActivityTemplateRow {
+  id: string;
+  label: string;
+  description: string | null;
+  activity_type: string | null;
+  default_duration_minutes: number | null;
+  attributes: Record<string, unknown> | null;
+}
+
+interface ActivityDefinitionRow {
+  id: string;
+  label: string;
+  description: string | null;
+  activity_type: string;
+  template_id: string | null;
+  default_duration_minutes: number | null;
+  relevant_for: string[] | null;
+  attributes: Record<string, unknown> | null;
+}
+
+interface ActivityLayerGroupRow {
+  id: string;
+  label: string;
+  sort_order: number;
+  description: string | null;
+}
+
+interface ActivityTranslationRow {
+  locale: string;
+  translation_key: string;
+  label: string | null;
+  abbreviation: string | null;
+}
+
 export interface StageData {
   stageId: StageId;
   timelineRange?: TimelineRange;
@@ -85,8 +143,12 @@ export interface StageData {
 }
 
 export interface MasterDataSets {
+  personnel: Personnel[];
+  personnelServices: PersonnelService[];
   personnelServicePools: PersonnelServicePool[];
   personnelPools: PersonnelPool[];
+  vehicles: Vehicle[];
+  vehicleServices: VehicleService[];
   vehicleServicePools: VehicleServicePool[];
   vehiclePools: VehiclePool[];
   vehicleTypes: VehicleType[];
@@ -101,13 +163,21 @@ export interface MasterDataSets {
   transferEdges: TransferEdge[];
 }
 
+export interface ActivityCatalogData {
+  types: ActivityTypeDefinition[];
+  templates: ActivityTemplate[];
+  definitions: ActivityDefinition[];
+  layerGroups: LayerGroup[];
+  translations: TranslationState;
+}
+
 interface PersonnelServicePoolRow {
   id: string;
   name: string;
   description: string | null;
-  service_ids: string[];
-  shift_coordinator: string | null;
-  contact_email: string | null;
+  service_ids?: string[];
+  shift_coordinator?: string | null;
+  contact_email?: string | null;
   attributes: Record<string, unknown> | null;
 }
 
@@ -115,8 +185,27 @@ interface PersonnelPoolRow {
   id: string;
   name: string;
   description: string | null;
-  personnel_ids: string[];
-  location_code: string | null;
+  personnel_ids?: string[];
+  location_code?: string | null;
+  attributes: Record<string, unknown> | null;
+}
+
+interface PersonnelRow {
+  id: string;
+  name: string;
+  external_ref: string | null;
+  home_base: string | null;
+  deleted: boolean;
+  deleted_at: string | null;
+  attributes: Record<string, unknown> | null;
+}
+
+interface PersonnelServiceRow {
+  id: string;
+  label: string;
+  pool_id: string | null;
+  deleted: boolean;
+  deleted_at: string | null;
   attributes: Record<string, unknown> | null;
 }
 
@@ -124,8 +213,8 @@ interface VehicleServicePoolRow {
   id: string;
   name: string;
   description: string | null;
-  service_ids: string[];
-  dispatcher: string | null;
+  service_ids?: string[];
+  dispatcher?: string | null;
   attributes: Record<string, unknown> | null;
 }
 
@@ -133,8 +222,28 @@ interface VehiclePoolRow {
   id: string;
   name: string;
   description: string | null;
-  vehicle_ids: string[];
-  depot_manager: string | null;
+  vehicle_ids?: string[];
+  depot_manager?: string | null;
+  attributes: Record<string, unknown> | null;
+}
+
+interface VehicleRow {
+  id: string;
+  label: string;
+  type_id: string | null;
+  external_ref: string | null;
+  home_depot: string | null;
+  deleted: boolean;
+  deleted_at: string | null;
+  attributes: Record<string, unknown> | null;
+}
+
+interface VehicleServiceRow {
+  id: string;
+  label: string;
+  pool_id: string | null;
+  deleted: boolean;
+  deleted_at: string | null;
   attributes: Record<string, unknown> | null;
 }
 
@@ -175,6 +284,26 @@ interface VehicleCompositionEntryRow {
   composition_id: string;
   type_id: string;
   quantity: number;
+}
+
+interface PersonnelPoolMemberRow {
+  pool_id: string;
+  personnel_id: string;
+}
+
+interface PersonnelServicePoolMemberRow {
+  pool_id: string;
+  service_id: string;
+}
+
+interface VehiclePoolMemberRow {
+  pool_id: string;
+  vehicle_id: string;
+}
+
+interface VehicleServicePoolMemberRow {
+  pool_id: string;
+  service_id: string;
 }
 
 interface JsonPayloadRow<T> {
@@ -643,10 +772,18 @@ export class PlanningRepository {
     }
 
     const [
-      personnelServicePools,
-      personnelPools,
-      vehicleServicePools,
-      vehiclePools,
+      personnelRows,
+      personnelServiceRows,
+      personnelPoolRows,
+      personnelPoolMemberRows,
+      personnelServicePoolRows,
+      personnelServicePoolMemberRows,
+      vehicleRows,
+      vehicleServiceRows,
+      vehiclePoolRows,
+      vehiclePoolMemberRows,
+      vehicleServicePoolRows,
+      vehicleServicePoolMemberRows,
       vehicleTypes,
       vehicleCompositions,
       operationalPoints,
@@ -659,45 +796,117 @@ export class PlanningRepository {
       transferEdges,
     ] = await Promise.all([
       this.database
-        .query<PersonnelServicePoolRow>(
+        .query<PersonnelRow>(
           `
-            SELECT id, name, description, service_ids, shift_coordinator, contact_email, attributes
-            FROM personnel_service_pool
+            SELECT id, name, external_ref, home_base, deleted, deleted_at, attributes
+            FROM personnel
+            WHERE deleted = FALSE
             ORDER BY name
           `,
         )
-        .then((result) =>
-          result.rows.map((row) => this.mapPersonnelServicePool(row)),
-        ),
+        .then((result) => result.rows),
+      this.database
+        .query<PersonnelServiceRow>(
+          `
+            SELECT id, label, pool_id, deleted, deleted_at, attributes
+            FROM personnel_services
+            WHERE deleted = FALSE
+            ORDER BY label
+          `,
+        )
+        .then((result) => result.rows),
       this.database
         .query<PersonnelPoolRow>(
           `
-            SELECT id, name, description, personnel_ids, location_code, attributes
-            FROM personnel_pool
+            SELECT id, name, description, attributes
+            FROM personnel_pools
+            WHERE deleted = FALSE
             ORDER BY name
           `,
         )
-        .then((result) => result.rows.map((row) => this.mapPersonnelPool(row))),
+        .then((result) => result.rows),
       this.database
-        .query<VehicleServicePoolRow>(
+        .query<PersonnelPoolMemberRow>(
           `
-            SELECT id, name, description, service_ids, dispatcher, attributes
-            FROM vehicle_service_pool
+            SELECT pool_id, personnel_id
+            FROM personnel_pool_members
+          `,
+        )
+        .then((result) => result.rows),
+      this.database
+        .query<PersonnelServicePoolRow>(
+          `
+            SELECT id, name, description, attributes
+            FROM personnel_service_pools
+            WHERE deleted = FALSE
             ORDER BY name
           `,
         )
-        .then((result) =>
-          result.rows.map((row) => this.mapVehicleServicePool(row)),
-        ),
+        .then((result) => result.rows),
+      this.database
+        .query<PersonnelServicePoolMemberRow>(
+          `
+            SELECT pool_id, service_id
+            FROM personnel_service_pool_members
+          `,
+        )
+        .then((result) => result.rows),
+      this.database
+        .query<VehicleRow>(
+          `
+            SELECT id, label, type_id, external_ref, home_depot, deleted, deleted_at, attributes
+            FROM vehicles
+            WHERE deleted = FALSE
+            ORDER BY label
+          `,
+        )
+        .then((result) => result.rows),
+      this.database
+        .query<VehicleServiceRow>(
+          `
+            SELECT id, label, pool_id, deleted, deleted_at, attributes
+            FROM vehicle_services
+            WHERE deleted = FALSE
+            ORDER BY label
+          `,
+        )
+        .then((result) => result.rows),
       this.database
         .query<VehiclePoolRow>(
           `
-            SELECT id, name, description, vehicle_ids, depot_manager, attributes
-            FROM vehicle_pool
+            SELECT id, name, description, attributes
+            FROM vehicle_pools
+            WHERE deleted = FALSE
             ORDER BY name
           `,
         )
-        .then((result) => result.rows.map((row) => this.mapVehiclePool(row))),
+        .then((result) => result.rows),
+      this.database
+        .query<VehiclePoolMemberRow>(
+          `
+            SELECT pool_id, vehicle_id
+            FROM vehicle_pool_members
+          `,
+        )
+        .then((result) => result.rows),
+      this.database
+        .query<VehicleServicePoolRow>(
+          `
+            SELECT id, name, description, attributes
+            FROM vehicle_service_pools
+            WHERE deleted = FALSE
+            ORDER BY name
+          `,
+        )
+        .then((result) => result.rows),
+      this.database
+        .query<VehicleServicePoolMemberRow>(
+          `
+            SELECT pool_id, service_id
+            FROM vehicle_service_pool_members
+          `,
+        )
+        .then((result) => result.rows),
       this.database
         .query<VehicleTypeRow>(
           `
@@ -764,9 +973,38 @@ export class PlanningRepository {
       ),
     ]);
 
+    const personnel = personnelRows.map((row) => this.mapPersonnel(row));
+    const personnelServices = personnelServiceRows.map((row) =>
+      this.mapPersonnelService(row),
+    );
+    const personnelPools = this.mapPersonnelPoolsWithMembers(
+      personnelPoolRows,
+      personnelPoolMemberRows,
+    );
+    const personnelServicePools = this.mapPersonnelServicePoolsWithMembers(
+      personnelServicePoolRows,
+      personnelServicePoolMemberRows,
+    );
+    const vehicles = vehicleRows.map((row) => this.mapVehicle(row));
+    const vehicleServices = vehicleServiceRows.map((row) =>
+      this.mapVehicleService(row),
+    );
+    const vehiclePools = this.mapVehiclePoolsWithMembers(
+      vehiclePoolRows,
+      vehiclePoolMemberRows,
+    );
+    const vehicleServicePools = this.mapVehicleServicePoolsWithMembers(
+      vehicleServicePoolRows,
+      vehicleServicePoolMemberRows,
+    );
+
     return {
+      personnel,
+      personnelServices,
       personnelServicePools,
       personnelPools,
+      vehicles,
+      vehicleServices,
       vehicleServicePools,
       vehiclePools,
       vehicleTypes,
@@ -782,134 +1020,594 @@ export class PlanningRepository {
     };
   }
 
+  async loadActivityCatalog(): Promise<ActivityCatalogData> {
+    if (!this.isEnabled) {
+      return this.createEmptyActivityCatalog();
+    }
+
+    const [
+      typeResult,
+      templateResult,
+      definitionResult,
+      layerResult,
+      translationResult,
+    ] = await Promise.all([
+      this.database.query<ActivityTypeDefinitionRow>(
+        `
+            SELECT
+              id,
+              label,
+              description,
+              applies_to,
+              relevant_for,
+              category,
+              time_mode,
+              fields,
+              default_duration_minutes
+            FROM activity_type_definition
+            ORDER BY id
+          `,
+      ),
+      this.database.query<ActivityTemplateRow>(
+        `
+            SELECT
+              id,
+              label,
+              description,
+              activity_type,
+              default_duration_minutes,
+              attributes
+            FROM activity_template
+            ORDER BY id
+          `,
+      ),
+      this.database.query<ActivityDefinitionRow>(
+        `
+            SELECT
+              id,
+              label,
+              description,
+              activity_type,
+              template_id,
+              default_duration_minutes,
+              relevant_for,
+              attributes
+            FROM activity_definition
+            ORDER BY id
+          `,
+      ),
+      this.database.query<ActivityLayerGroupRow>(
+        `
+            SELECT id, label, sort_order, description
+            FROM activity_layer_group
+            ORDER BY sort_order, id
+          `,
+      ),
+      this.database.query<ActivityTranslationRow>(
+        `
+            SELECT locale, translation_key, label, abbreviation
+            FROM activity_translation
+            ORDER BY locale, translation_key
+          `,
+      ),
+    ]);
+
+    return {
+      types: typeResult.rows.map((row) => this.mapActivityTypeDefinition(row)),
+      templates: templateResult.rows.map((row) =>
+        this.mapActivityTemplate(row),
+      ),
+      definitions: definitionResult.rows.map((row) =>
+        this.mapActivityDefinition(row),
+      ),
+      layerGroups: layerResult.rows.map((row) =>
+        this.mapActivityLayerGroup(row),
+      ),
+      translations: this.mapTranslations(translationResult.rows),
+    };
+  }
+
+  async replaceActivityCatalog(catalog: ActivityCatalogData): Promise<void> {
+    if (!this.isEnabled) {
+      return;
+    }
+    await this.database.withClient(async (client) => {
+      await client.query('BEGIN');
+      try {
+        await client.query('DELETE FROM activity_definition');
+        await client.query('DELETE FROM activity_template');
+        await client.query('DELETE FROM activity_type_definition');
+        await client.query('DELETE FROM activity_layer_group');
+        await client.query('DELETE FROM activity_translation');
+
+        if (catalog.layerGroups.length) {
+          await client.query(
+            `
+              WITH incoming AS (
+                SELECT *
+                FROM jsonb_to_recordset($1::jsonb) AS t(
+                  id TEXT,
+                  label TEXT,
+                  "order" INTEGER,
+                  description TEXT
+                )
+              )
+              INSERT INTO activity_layer_group (
+                id,
+                label,
+                sort_order,
+                description
+              )
+              SELECT
+                id,
+                label,
+                COALESCE("order", 50),
+                description
+              FROM incoming
+            `,
+            [JSON.stringify(catalog.layerGroups)],
+          );
+        }
+
+        if (catalog.types.length) {
+          await client.query(
+            `
+              WITH incoming AS (
+                SELECT *
+                FROM jsonb_to_recordset($1::jsonb) AS t(
+                  id TEXT,
+                  label TEXT,
+                  description TEXT,
+                  "appliesTo" TEXT[],
+                  "relevantFor" TEXT[],
+                  category TEXT,
+                  "timeMode" TEXT,
+                  fields TEXT[],
+                  "defaultDurationMinutes" INTEGER
+                )
+              )
+              INSERT INTO activity_type_definition (
+                id,
+                label,
+                description,
+                applies_to,
+                relevant_for,
+                category,
+                time_mode,
+                fields,
+                default_duration_minutes
+              )
+              SELECT
+                id,
+                label,
+                description,
+                "appliesTo",
+                "relevantFor",
+                category,
+                "timeMode",
+                fields,
+                "defaultDurationMinutes"
+              FROM incoming
+            `,
+            [JSON.stringify(catalog.types)],
+          );
+        }
+
+        if (catalog.templates.length) {
+          await client.query(
+            `
+              WITH incoming AS (
+                SELECT *
+                FROM jsonb_to_recordset($1::jsonb) AS t(
+                  id TEXT,
+                  label TEXT,
+                  description TEXT,
+                  "activityType" TEXT,
+                  "defaultDurationMinutes" INTEGER,
+                  attributes JSONB
+                )
+              )
+              INSERT INTO activity_template (
+                id,
+                label,
+                description,
+                activity_type,
+                default_duration_minutes,
+                attributes
+              )
+              SELECT
+                id,
+                label,
+                description,
+                "activityType",
+                "defaultDurationMinutes",
+                attributes
+              FROM incoming
+            `,
+            [JSON.stringify(catalog.templates)],
+          );
+        }
+
+        if (catalog.definitions.length) {
+          await client.query(
+            `
+              WITH incoming AS (
+                SELECT *
+                FROM jsonb_to_recordset($1::jsonb) AS t(
+                  id TEXT,
+                  label TEXT,
+                  description TEXT,
+                  "activityType" TEXT,
+                  "templateId" TEXT,
+                  "defaultDurationMinutes" INTEGER,
+                  "relevantFor" TEXT[],
+                  attributes JSONB
+                )
+              )
+              INSERT INTO activity_definition (
+                id,
+                label,
+                description,
+                activity_type,
+                template_id,
+                default_duration_minutes,
+                relevant_for,
+                attributes
+              )
+              SELECT
+                id,
+                label,
+                description,
+                "activityType",
+                "templateId",
+                "defaultDurationMinutes",
+                "relevantFor",
+                attributes
+              FROM incoming
+            `,
+            [JSON.stringify(catalog.definitions)],
+          );
+        }
+
+        const translationRows = this.flattenTranslations(catalog.translations);
+        if (translationRows.length) {
+          await client.query(
+            `
+              WITH incoming AS (
+                SELECT *
+                FROM jsonb_to_recordset($1::jsonb) AS t(
+                  locale TEXT,
+                  translation_key TEXT,
+                  label TEXT,
+                  abbreviation TEXT
+                )
+              )
+              INSERT INTO activity_translation (
+                locale,
+                translation_key,
+                label,
+                abbreviation
+              )
+              SELECT locale, translation_key, label, abbreviation
+              FROM incoming
+            `,
+            [JSON.stringify(translationRows)],
+          );
+        }
+
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        this.logger.error(
+          'Fehler beim Speichern des Activity-Katalogs',
+          (error as Error).stack ?? String(error),
+        );
+        throw error;
+      }
+    });
+  }
+
   async replacePersonnelServicePools(
     items: PersonnelServicePool[],
   ): Promise<void> {
     if (!this.isEnabled) {
       return;
     }
-    await this.replaceCollection(
-      'personnel_service_pool',
-      items,
-      `
-        WITH incoming AS (
-          SELECT *
-          FROM jsonb_to_recordset($1::jsonb) AS t(
-            id TEXT,
-            name TEXT,
-            description TEXT,
-            "serviceIds" TEXT[],
-            "shiftCoordinator" TEXT,
-            "contactEmail" TEXT,
-            attributes JSONB
-          )
-        )
-        INSERT INTO personnel_service_pool (
-          id,
-          name,
-          description,
-          service_ids,
-          shift_coordinator,
-          contact_email,
-          attributes
-        )
-        SELECT
-          id,
-          name,
-          description,
-          "serviceIds",
-          "shiftCoordinator",
-          "contactEmail",
-          attributes
-        FROM incoming
-      `,
-    );
+    await this.database.withClient(async (client) => {
+      await client.query('BEGIN');
+      try {
+        await client.query('DELETE FROM personnel_service_pool_members');
+        await client.query('DELETE FROM personnel_service_pools');
+        if (items.length) {
+          await client.query(
+            `
+              WITH incoming AS (
+                SELECT *
+                FROM jsonb_to_recordset($1::jsonb) AS t(
+                  id TEXT,
+                  name TEXT,
+                  description TEXT,
+                  attributes JSONB
+                )
+              )
+              INSERT INTO personnel_service_pools (
+                id,
+                name,
+                description,
+                deleted,
+                attributes
+              )
+              SELECT
+                id,
+                name,
+                description,
+                FALSE,
+                attributes
+              FROM incoming
+            `,
+            [JSON.stringify(items)],
+          );
+
+          const members = this.flattenMembers(
+            items.map((pool) => ({
+              poolId: pool.id,
+              members: pool.serviceIds ?? [],
+            })),
+          );
+          if (members.length) {
+            await client.query(
+              `
+                WITH incoming AS (
+                  SELECT *
+                  FROM jsonb_to_recordset($1::jsonb) AS t(
+                    pool_id TEXT,
+                    member_id TEXT
+                  )
+                )
+                INSERT INTO personnel_service_pool_members (pool_id, service_id)
+                SELECT pool_id, member_id FROM incoming
+              `,
+              [JSON.stringify(members)],
+            );
+          }
+        }
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        this.logger.error(
+          'Fehler beim Aktualisieren der Personnel-Service-Pools',
+          (error as Error).stack ?? String(error),
+        );
+        throw error;
+      }
+    });
   }
 
   async replacePersonnelPools(items: PersonnelPool[]): Promise<void> {
     if (!this.isEnabled) {
       return;
     }
-    await this.replaceCollection(
-      'personnel_pool',
-      items,
-      `
-        WITH incoming AS (
-          SELECT *
-          FROM jsonb_to_recordset($1::jsonb) AS t(
-            id TEXT,
-            name TEXT,
-            description TEXT,
-            "personnelIds" TEXT[],
-            "locationCode" TEXT,
-            attributes JSONB
-          )
-        )
-        INSERT INTO personnel_pool (
-          id,
-          name,
-          description,
-          personnel_ids,
-          location_code,
-          attributes
-        )
-        SELECT
-          id,
-          name,
-          description,
-          "personnelIds",
-          "locationCode",
-          attributes
-        FROM incoming
-      `,
-    );
+    await this.database.withClient(async (client) => {
+      await client.query('BEGIN');
+      try {
+        await client.query('DELETE FROM personnel_pool_members');
+        await client.query('DELETE FROM personnel_pools');
+        if (items.length) {
+          await client.query(
+            `
+              WITH incoming AS (
+                SELECT *
+                FROM jsonb_to_recordset($1::jsonb) AS t(
+                  id TEXT,
+                  name TEXT,
+                  description TEXT,
+                  attributes JSONB
+                )
+              )
+              INSERT INTO personnel_pools (
+                id,
+                name,
+                description,
+                deleted,
+                attributes
+              )
+              SELECT
+                id,
+                name,
+                description,
+                FALSE,
+                attributes
+              FROM incoming
+            `,
+            [JSON.stringify(items)],
+          );
+          const members = this.flattenMembers(
+            items.map((pool) => ({
+              poolId: pool.id,
+              members: pool.personnelIds ?? [],
+            })),
+          );
+          if (members.length) {
+            await client.query(
+              `
+                WITH incoming AS (
+                  SELECT *
+                  FROM jsonb_to_recordset($1::jsonb) AS t(
+                    pool_id TEXT,
+                    member_id TEXT
+                  )
+                )
+                INSERT INTO personnel_pool_members (pool_id, personnel_id)
+                SELECT pool_id, member_id FROM incoming
+              `,
+              [JSON.stringify(members)],
+            );
+          }
+        }
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        this.logger.error(
+          'Fehler beim Aktualisieren der Personnel-Pools',
+          (error as Error).stack ?? String(error),
+        );
+        throw error;
+      }
+    });
   }
 
   async replaceVehicleServicePools(items: VehicleServicePool[]): Promise<void> {
     if (!this.isEnabled) {
       return;
     }
-    await this.replaceCollection(
-      'vehicle_service_pool',
-      items,
-      `
-        WITH incoming AS (
-          SELECT *
-          FROM jsonb_to_recordset($1::jsonb) AS t(
-            id TEXT,
-            name TEXT,
-            description TEXT,
-            "serviceIds" TEXT[],
-            dispatcher TEXT,
-            attributes JSONB
-          )
-        )
-        INSERT INTO vehicle_service_pool (
-          id,
-          name,
-          description,
-          service_ids,
-          dispatcher,
-          attributes
-        )
-        SELECT
-          id,
-          name,
-          description,
-          "serviceIds",
-          dispatcher,
-          attributes
-        FROM incoming
-      `,
-    );
+    await this.database.withClient(async (client) => {
+      await client.query('BEGIN');
+      try {
+        await client.query('DELETE FROM vehicle_service_pool_members');
+        await client.query('DELETE FROM vehicle_service_pools');
+        if (items.length) {
+          await client.query(
+            `
+              WITH incoming AS (
+                SELECT *
+                FROM jsonb_to_recordset($1::jsonb) AS t(
+                  id TEXT,
+                  name TEXT,
+                  description TEXT,
+                  attributes JSONB
+                )
+              )
+              INSERT INTO vehicle_service_pools (
+                id,
+                name,
+                description,
+                deleted,
+                attributes
+              )
+              SELECT
+                id,
+                name,
+                description,
+                FALSE,
+                attributes
+              FROM incoming
+            `,
+            [JSON.stringify(items)],
+          );
+          const members = this.flattenMembers(
+            items.map((pool) => ({
+              poolId: pool.id,
+              members: pool.serviceIds ?? [],
+            })),
+          );
+          if (members.length) {
+            await client.query(
+              `
+                WITH incoming AS (
+                  SELECT *
+                  FROM jsonb_to_recordset($1::jsonb) AS t(
+                    pool_id TEXT,
+                    member_id TEXT
+                  )
+                )
+                INSERT INTO vehicle_service_pool_members (pool_id, service_id)
+                SELECT pool_id, member_id FROM incoming
+              `,
+              [JSON.stringify(members)],
+            );
+          }
+        }
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        this.logger.error(
+          'Fehler beim Aktualisieren der Vehicle-Service-Pools',
+          (error as Error).stack ?? String(error),
+        );
+        throw error;
+      }
+    });
   }
 
   async replaceVehiclePools(items: VehiclePool[]): Promise<void> {
     if (!this.isEnabled) {
       return;
     }
+    await this.database.withClient(async (client) => {
+      await client.query('BEGIN');
+      try {
+        await client.query('DELETE FROM vehicle_pool_members');
+        await client.query('DELETE FROM vehicle_pools');
+        if (items.length) {
+          await client.query(
+            `
+              WITH incoming AS (
+                SELECT *
+                FROM jsonb_to_recordset($1::jsonb) AS t(
+                  id TEXT,
+                  name TEXT,
+                  description TEXT,
+                  attributes JSONB
+                )
+              )
+              INSERT INTO vehicle_pools (
+                id,
+                name,
+                description,
+                deleted,
+                attributes
+              )
+              SELECT
+                id,
+                name,
+                description,
+                FALSE,
+                attributes
+              FROM incoming
+            `,
+            [JSON.stringify(items)],
+          );
+          const members = this.flattenMembers(
+            items.map((pool) => ({
+              poolId: pool.id,
+              members: pool.vehicleIds ?? [],
+            })),
+          );
+          if (members.length) {
+            await client.query(
+              `
+                WITH incoming AS (
+                  SELECT *
+                  FROM jsonb_to_recordset($1::jsonb) AS t(
+                    pool_id TEXT,
+                    member_id TEXT
+                  )
+                )
+                INSERT INTO vehicle_pool_members (pool_id, vehicle_id)
+                SELECT pool_id, member_id FROM incoming
+              `,
+              [JSON.stringify(members)],
+            );
+          }
+        }
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        this.logger.error(
+          'Fehler beim Aktualisieren der Vehicle-Pools',
+          (error as Error).stack ?? String(error),
+        );
+        throw error;
+      }
+    });
+  }
+
+  async replacePersonnel(items: Personnel[]): Promise<void> {
+    if (!this.isEnabled) {
+      return;
+    }
     await this.replaceCollection(
-      'vehicle_pool',
+      'personnel',
       items,
       `
         WITH incoming AS (
@@ -917,26 +1615,136 @@ export class PlanningRepository {
           FROM jsonb_to_recordset($1::jsonb) AS t(
             id TEXT,
             name TEXT,
-            description TEXT,
-            "vehicleIds" TEXT[],
-            "depotManager" TEXT,
+            "externalRef" TEXT,
+            "homeBase" TEXT,
             attributes JSONB
           )
         )
-        INSERT INTO vehicle_pool (
+        INSERT INTO personnel (
           id,
           name,
-          description,
-          vehicle_ids,
-          depot_manager,
+          external_ref,
+          home_base,
+          deleted,
           attributes
         )
         SELECT
           id,
           name,
-          description,
-          "vehicleIds",
-          "depotManager",
+          "externalRef",
+          "homeBase",
+          FALSE,
+          attributes
+        FROM incoming
+      `,
+    );
+  }
+
+  async replacePersonnelServices(items: PersonnelService[]): Promise<void> {
+    if (!this.isEnabled) {
+      return;
+    }
+    await this.replaceCollection(
+      'personnel_services',
+      items,
+      `
+        WITH incoming AS (
+          SELECT *
+          FROM jsonb_to_recordset($1::jsonb) AS t(
+            id TEXT,
+            name TEXT,
+            "poolId" TEXT,
+            attributes JSONB
+          )
+        )
+        INSERT INTO personnel_services (
+          id,
+          label,
+          pool_id,
+          deleted,
+          attributes
+        )
+        SELECT
+          id,
+          name,
+          "poolId",
+          FALSE,
+          attributes
+        FROM incoming
+      `,
+    );
+  }
+
+  async replaceVehicles(items: Vehicle[]): Promise<void> {
+    if (!this.isEnabled) {
+      return;
+    }
+    await this.replaceCollection(
+      'vehicles',
+      items,
+      `
+        WITH incoming AS (
+          SELECT *
+          FROM jsonb_to_recordset($1::jsonb) AS t(
+            id TEXT,
+            name TEXT,
+            "typeId" TEXT,
+            "externalRef" TEXT,
+            "homeDepot" TEXT,
+            attributes JSONB
+          )
+        )
+        INSERT INTO vehicles (
+          id,
+          label,
+          type_id,
+          external_ref,
+          home_depot,
+          deleted,
+          attributes
+        )
+        SELECT
+          id,
+          name,
+          "typeId",
+          "externalRef",
+          "homeDepot",
+          FALSE,
+          attributes
+        FROM incoming
+      `,
+    );
+  }
+
+  async replaceVehicleServices(items: VehicleService[]): Promise<void> {
+    if (!this.isEnabled) {
+      return;
+    }
+    await this.replaceCollection(
+      'vehicle_services',
+      items,
+      `
+        WITH incoming AS (
+          SELECT *
+          FROM jsonb_to_recordset($1::jsonb) AS t(
+            id TEXT,
+            name TEXT,
+            "poolId" TEXT,
+            attributes JSONB
+          )
+        )
+        INSERT INTO vehicle_services (
+          id,
+          label,
+          pool_id,
+          deleted,
+          attributes
+        )
+        SELECT
+          id,
+          name,
+          "poolId",
+          FALSE,
           attributes
         FROM incoming
       `,
@@ -1199,6 +2007,234 @@ export class PlanningRepository {
     );
   }
 
+  private mapActivityTypeDefinition(
+    row: ActivityTypeDefinitionRow,
+  ): ActivityTypeDefinition {
+    return {
+      id: row.id,
+      label: row.label,
+      description: row.description ?? undefined,
+      appliesTo: this.toResourceKinds(row.applies_to),
+      relevantFor: this.toResourceKinds(row.relevant_for),
+      category: row.category as ActivityTypeDefinition['category'],
+      timeMode: row.time_mode as ActivityTypeDefinition['timeMode'],
+      fields: this.toActivityFields(row.fields),
+      defaultDurationMinutes: row.default_duration_minutes,
+    };
+  }
+
+  private mapActivityTemplate(row: ActivityTemplateRow): ActivityTemplate {
+    return {
+      id: row.id,
+      label: row.label,
+      description: row.description ?? undefined,
+      activityType: row.activity_type ?? undefined,
+      defaultDurationMinutes: row.default_duration_minutes ?? undefined,
+      attributes: row.attributes ?? undefined,
+    };
+  }
+
+  private mapActivityDefinition(
+    row: ActivityDefinitionRow,
+  ): ActivityDefinition {
+    return {
+      id: row.id,
+      label: row.label,
+      description: row.description ?? undefined,
+      activityType: row.activity_type,
+      templateId: row.template_id ?? undefined,
+      defaultDurationMinutes: row.default_duration_minutes ?? undefined,
+      relevantFor: this.toResourceKinds(row.relevant_for),
+      attributes: row.attributes ?? undefined,
+    };
+  }
+
+  private mapActivityLayerGroup(row: ActivityLayerGroupRow): LayerGroup {
+    return {
+      id: row.id,
+      label: row.label,
+      order: row.sort_order ?? undefined,
+      description: row.description ?? undefined,
+    };
+  }
+
+  private mapTranslations(rows: ActivityTranslationRow[]): TranslationState {
+    const state: TranslationState = {};
+    rows.forEach((row) => {
+      const localeBucket = state[row.locale] ?? {};
+      localeBucket[row.translation_key] = {
+        label: row.label ?? undefined,
+        abbreviation: row.abbreviation ?? undefined,
+      };
+      state[row.locale] = localeBucket;
+    });
+    return state;
+  }
+
+  private flattenTranslations(
+    state: TranslationState,
+  ): ActivityTranslationRow[] {
+    const rows: ActivityTranslationRow[] = [];
+    Object.entries(state ?? {}).forEach(([locale, entries]) => {
+      if (!locale) {
+        return;
+      }
+      Object.entries(entries ?? {}).forEach(([key, value]) => {
+        if (!key) {
+          return;
+        }
+        rows.push({
+          locale,
+          translation_key: key,
+          label: value?.label ?? null,
+          abbreviation: value?.abbreviation ?? null,
+        });
+      });
+    });
+    return rows;
+  }
+
+  private toResourceKinds(values?: string[] | null): ResourceKind[] {
+    const allowed: ResourceKind[] = [
+      'personnel-service',
+      'vehicle-service',
+      'personnel',
+      'vehicle',
+    ];
+    const allowedSet = new Set<ResourceKind>(allowed);
+    return (values ?? [])
+      .map((entry) => entry?.trim())
+      .filter((entry): entry is ResourceKind => Boolean(entry) && allowedSet.has(entry as ResourceKind));
+  }
+
+  private toActivityFields(values?: string[] | null): ActivityFieldKey[] {
+    const allowed: ActivityFieldKey[] = ['start', 'end', 'from', 'to', 'remark'];
+    const allowedSet = new Set<ActivityFieldKey>(allowed);
+    return (values ?? [])
+      .map((entry) => entry?.trim())
+      .filter((entry): entry is ActivityFieldKey => Boolean(entry) && allowedSet.has(entry as ActivityFieldKey));
+  }
+
+  private mapPersonnel(row: PersonnelRow): Personnel {
+    return {
+      id: row.id,
+      name: row.name,
+      externalRef: row.external_ref ?? undefined,
+      homeBase: row.home_base ?? undefined,
+      attributes: row.attributes ?? undefined,
+    };
+  }
+
+  private mapPersonnelService(row: PersonnelServiceRow): PersonnelService {
+    return {
+      id: row.id,
+      name: row.label,
+      poolId: row.pool_id ?? undefined,
+      attributes: row.attributes ?? undefined,
+    };
+  }
+
+  private mapVehicle(row: VehicleRow): Vehicle {
+    return {
+      id: row.id,
+      name: row.label,
+      typeId: row.type_id ?? undefined,
+      externalRef: row.external_ref ?? undefined,
+      homeDepot: row.home_depot ?? undefined,
+      attributes: row.attributes ?? undefined,
+    };
+  }
+
+  private mapVehicleService(row: VehicleServiceRow): VehicleService {
+    return {
+      id: row.id,
+      name: row.label,
+      poolId: row.pool_id ?? undefined,
+      attributes: row.attributes ?? undefined,
+    };
+  }
+
+  private mapPersonnelPoolsWithMembers(
+    poolRows: PersonnelPoolRow[],
+    memberRows: PersonnelPoolMemberRow[],
+  ): PersonnelPool[] {
+    const membersByPool = new Map<string, string[]>();
+    memberRows.forEach((row) => {
+      const list = membersByPool.get(row.pool_id) ?? [];
+      list.push(row.personnel_id);
+      membersByPool.set(row.pool_id, list);
+    });
+    return poolRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description ?? undefined,
+      personnelIds: membersByPool.get(row.id) ?? [],
+      locationCode: row.location_code ?? undefined,
+      attributes: row.attributes ?? undefined,
+    }));
+  }
+
+  private mapPersonnelServicePoolsWithMembers(
+    poolRows: PersonnelServicePoolRow[],
+    memberRows: PersonnelServicePoolMemberRow[],
+  ): PersonnelServicePool[] {
+    const membersByPool = new Map<string, string[]>();
+    memberRows.forEach((row) => {
+      const list = membersByPool.get(row.pool_id) ?? [];
+      list.push(row.service_id);
+      membersByPool.set(row.pool_id, list);
+    });
+    return poolRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description ?? undefined,
+      serviceIds: membersByPool.get(row.id) ?? [],
+      shiftCoordinator: undefined,
+      contactEmail: undefined,
+      attributes: row.attributes ?? undefined,
+    }));
+  }
+
+  private mapVehiclePoolsWithMembers(
+    poolRows: VehiclePoolRow[],
+    memberRows: VehiclePoolMemberRow[],
+  ): VehiclePool[] {
+    const membersByPool = new Map<string, string[]>();
+    memberRows.forEach((row) => {
+      const list = membersByPool.get(row.pool_id) ?? [];
+      list.push(row.vehicle_id);
+      membersByPool.set(row.pool_id, list);
+    });
+    return poolRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description ?? undefined,
+      vehicleIds: membersByPool.get(row.id) ?? [],
+      depotManager: row.depot_manager ?? undefined,
+      attributes: row.attributes ?? undefined,
+    }));
+  }
+
+  private mapVehicleServicePoolsWithMembers(
+    poolRows: VehicleServicePoolRow[],
+    memberRows: VehicleServicePoolMemberRow[],
+  ): VehicleServicePool[] {
+    const membersByPool = new Map<string, string[]>();
+    memberRows.forEach((row) => {
+      const list = membersByPool.get(row.pool_id) ?? [];
+      list.push(row.service_id);
+      membersByPool.set(row.pool_id, list);
+    });
+    return poolRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description ?? undefined,
+      serviceIds: membersByPool.get(row.id) ?? [],
+      dispatcher: undefined,
+      attributes: row.attributes ?? undefined,
+    }));
+  }
+
   private mapResource(row: ResourceRow): Resource {
     return {
       id: row.id,
@@ -1430,6 +2466,18 @@ export class PlanningRepository {
     return payload;
   }
 
+  private flattenMembers(
+    items: { poolId: string; members: string[] }[],
+  ): { pool_id: string; member_id: string }[] {
+    const rows: { pool_id: string; member_id: string }[] = [];
+    items.forEach((entry) => {
+      (entry.members ?? []).forEach((member) => {
+        rows.push({ pool_id: entry.poolId, member_id: member });
+      });
+    });
+    return rows;
+  }
+
   private async replaceCollection(
     tableName: string,
     items: unknown[],
@@ -1533,10 +2581,24 @@ export class PlanningRepository {
     }
   }
 
+  private createEmptyActivityCatalog(): ActivityCatalogData {
+    return {
+      types: [],
+      templates: [],
+      definitions: [],
+      layerGroups: [],
+      translations: {},
+    };
+  }
+
   private createEmptyMasterData(): MasterDataSets {
     return {
+      personnel: [],
+      personnelServices: [],
       personnelServicePools: [],
       personnelPools: [],
+      vehicles: [],
+      vehicleServices: [],
       vehicleServicePools: [],
       vehiclePools: [],
       vehicleTypes: [],

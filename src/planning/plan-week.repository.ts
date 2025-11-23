@@ -162,7 +162,9 @@ export class PlanWeekRepository {
     return this.mapTemplate(templateRow, slicesResult.rows);
   }
 
-  async upsertTemplate(payload: UpsertPlanWeekTemplateInput): Promise<PlanWeekTemplate> {
+  async upsertTemplate(
+    payload: UpsertPlanWeekTemplateInput,
+  ): Promise<PlanWeekTemplate> {
     if (!this.isEnabled) {
       throw new Error('Database connection not configured');
     }
@@ -261,7 +263,9 @@ export class PlanWeekRepository {
     });
   }
 
-  async listTemplateActivities(templateId: string): Promise<PlanWeekActivity[]> {
+  async listTemplateActivities(
+    templateId: string,
+  ): Promise<PlanWeekActivity[]> {
     if (!this.isEnabled) {
       return [];
     }
@@ -286,7 +290,9 @@ export class PlanWeekRepository {
     return result.rows.map((row) => this.mapActivity(row));
   }
 
-  async upsertTemplateActivity(activity: PlanWeekActivity): Promise<PlanWeekActivity> {
+  async upsertTemplateActivity(
+    activity: PlanWeekActivity,
+  ): Promise<PlanWeekActivity> {
     if (!this.isEnabled) {
       throw new Error('Database connection not configured');
     }
@@ -427,7 +433,10 @@ export class PlanWeekRepository {
     return this.mapValidity(result.rows[0]);
   }
 
-  async deleteValidity(templateId: string, validityId: string): Promise<boolean> {
+  async deleteValidity(
+    templateId: string,
+    validityId: string,
+  ): Promise<boolean> {
     if (!this.isEnabled) {
       return false;
     }
@@ -442,7 +451,10 @@ export class PlanWeekRepository {
     return result.rowCount > 0;
   }
 
-  async listWeekInstances(range: { from: string; to: string }): Promise<WeekInstance[]> {
+  async listWeekInstances(range: {
+    from: string;
+    to: string;
+  }): Promise<WeekInstance[]> {
     if (!this.isEnabled) {
       return [];
     }
@@ -696,7 +708,9 @@ export class PlanWeekRepository {
 
     const assignmentsByInstance = new Map<string, ServiceAssignmentRow[]>();
     assignmentResult.rows.forEach((assignment) => {
-      const instanceId = serviceInstanceLookup.get(assignment.scheduled_service_id);
+      const instanceId = serviceInstanceLookup.get(
+        assignment.scheduled_service_id,
+      );
       if (!instanceId) {
         return;
       }
@@ -785,14 +799,17 @@ export class PlanWeekRepository {
       attributes: service.attributes ?? undefined,
     }));
 
-    const assignmentModels: ServiceAssignment[] = assignments.map((assignment) => ({
-      id: assignment.id,
-      scheduledServiceId: assignment.scheduled_service_id,
-      resourceId: assignment.resource_id,
-      resourceKind: assignment.resource_kind as ServiceAssignment['resourceKind'],
-      assignedAtIso: assignment.assigned_at.toISOString(),
-      assignedBy: assignment.assigned_by ?? undefined,
-    }));
+    const assignmentModels: ServiceAssignment[] = assignments.map(
+      (assignment) => ({
+        id: assignment.id,
+        scheduledServiceId: assignment.scheduled_service_id,
+        resourceId: assignment.resource_id,
+        resourceKind:
+          assignment.resource_kind as ServiceAssignment['resourceKind'],
+        assignedAtIso: assignment.assigned_at.toISOString(),
+        assignedBy: assignment.assigned_by ?? undefined,
+      }),
+    );
 
     return {
       id: row.id,

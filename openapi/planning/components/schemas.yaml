@@ -179,9 +179,7 @@ schemas:
         items:
           type: string
       attributes:
-        type: object
-        additionalProperties: true
-        description: "Freies Attribut-Bag f\xFCr kundenspezifische Felder."
+        $ref: '#/components/schemas/ActivityAttributes'
       meta:
         type: object
         additionalProperties: true
@@ -191,6 +189,204 @@ schemas:
     - id
     - title
     - start
+  ActivityTypeDefinition:
+    type: object
+    description: "Definition eines Activity Types (technisch)."
+    properties:
+      id:
+        type: string
+      label:
+        type: string
+      description:
+        type: string
+        nullable: true
+      appliesTo:
+        type: array
+        items:
+          type: string
+          enum: [personnel, vehicle, personnel-service, vehicle-service]
+      relevantFor:
+        type: array
+        items:
+          type: string
+          enum: [personnel, vehicle, personnel-service, vehicle-service]
+      category:
+        type: string
+        enum: [rest, movement, service, other]
+      timeMode:
+        type: string
+        enum: [duration, range, point]
+      fields:
+        type: array
+        items:
+          type: string
+          enum: [start, end, from, to, remark]
+      defaultDurationMinutes:
+        type: integer
+        format: int32
+    required: [id, label, appliesTo, relevantFor, category, timeMode, fields, defaultDurationMinutes]
+    example:
+      id: service-start
+      label: Dienstanfang
+      appliesTo: [personnel, vehicle, personnel-service, vehicle-service]
+      relevantFor: [personnel, vehicle, personnel-service, vehicle-service]
+      category: service
+      timeMode: point
+      fields: [start, end, from, to, remark]
+      defaultDurationMinutes: 45
+  ActivityTemplate:
+    type: object
+    properties:
+      id: { type: string }
+      label: { type: string }
+      description: { type: string, nullable: true }
+      activityType: { type: string, nullable: true }
+      defaultDurationMinutes: { type: integer, format: int32, nullable: true }
+      attributes:
+        $ref: '#/components/schemas/ActivityAttributes'
+    required: [id, label, attributes]
+    example:
+      id: pause-30-template
+      label: Pause 30 min
+      description: Standardpause mit 30 Minuten
+      activityType: break
+      defaultDurationMinutes: 30
+      attributes:
+        category:
+          value: pause
+        is_break:
+          value: true
+        is_short_break:
+          value: true
+  ActivityDefinition:
+    type: object
+    properties:
+      id: { type: string }
+      label: { type: string }
+      description: { type: string, nullable: true }
+      activityType: { type: string }
+      templateId: { type: string, nullable: true }
+      defaultDurationMinutes: { type: integer, format: int32, nullable: true }
+      relevantFor:
+        type: array
+        items:
+          type: string
+          enum: [personnel, vehicle, personnel-service, vehicle-service]
+      attributes:
+        $ref: '#/components/schemas/ActivityAttributes'
+    required: [id, label, activityType, attributes]
+    example:
+      id: pause-30
+      label: Pause 30
+      activityType: break
+      templateId: pause-30-template
+      defaultDurationMinutes: 30
+      attributes:
+        default_duration:
+          value: 30
+        kind:
+          value: pause
+        is_break:
+          value: true
+        is_short_break:
+          value: true
+  ActivityCatalogSnapshot:
+    type: object
+    description: "Gesamter Katalog für Activity Types, Templates, Definitions, Layer und Übersetzungen."
+    properties:
+      types:
+        type: array
+        items:
+          $ref: '#/components/schemas/ActivityTypeDefinition'
+      templates:
+        type: array
+        items:
+          $ref: '#/components/schemas/ActivityTemplate'
+      definitions:
+        type: array
+        items:
+          $ref: '#/components/schemas/ActivityDefinition'
+      layerGroups:
+        type: array
+        items:
+          $ref: '#/components/schemas/LayerGroup'
+      translations:
+        $ref: '#/components/schemas/TranslationState'
+    required: [types, templates, definitions, layerGroups, translations]
+    example:
+      types:
+        - id: service-start
+          label: Dienstanfang
+          appliesTo: [personnel, vehicle, personnel-service, vehicle-service]
+          relevantFor: [personnel, vehicle, personnel-service, vehicle-service]
+          category: service
+          timeMode: point
+          fields: [start, end, from, to, remark]
+          defaultDurationMinutes: 45
+        - id: break
+          label: Pause
+          appliesTo: [personnel, vehicle, personnel-service, vehicle-service]
+          relevantFor: [personnel, vehicle, personnel-service, vehicle-service]
+          category: service
+          timeMode: duration
+          fields: [start, end, remark]
+          defaultDurationMinutes: 30
+      templates:
+        - id: pause-30-template
+          label: Pause 30 min
+          activityType: break
+          defaultDurationMinutes: 30
+          attributes:
+            is_break: { value: true }
+            is_short_break: { value: true }
+            consider_capacity_conflicts: { value: true }
+        - id: pause-60-template
+          label: Pause 60 min
+          activityType: break
+          defaultDurationMinutes: 60
+          attributes:
+            is_break: { value: true }
+            consider_capacity_conflicts: { value: true }
+      definitions:
+        - id: pause-30
+          label: Pause 30
+          activityType: break
+          templateId: pause-30-template
+          attributes:
+            default_duration: { value: 30 }
+            kind: { value: pause }
+            is_break: { value: true }
+            is_short_break: { value: true }
+            consider_capacity_conflicts: { value: true }
+        - id: pause-60
+          label: Pause 60
+          activityType: break
+          templateId: pause-60-template
+          attributes:
+            default_duration: { value: 60 }
+            kind: { value: pause }
+            is_break: { value: true }
+            consider_capacity_conflicts: { value: true }
+      layerGroups:
+        - id: background
+          label: Hintergrund
+          order: 10
+        - id: default
+          label: Standard
+          order: 50
+        - id: marker
+          label: Marker
+          order: 90
+      translations:
+        de:
+          "activityType:break":
+            label: "Pause"
+            abbreviation: "PA"
+          "activityType:service-start":
+            label: "Dienstanfang"
+            abbreviation: "DA"
+          "layer:background":
+            label: "Hintergrund"
   PlanningStageRealtimeEvent:
     type: object
     description: "Nachricht, die \xFCber den SSE-Stream `/planning/stages/{stageId}/events`\
@@ -233,7 +429,361 @@ schemas:
         $ref: '#/components/schemas/TimelineRange'
     required:
     - stageId
+  ActivityAttributes:
+    type: object
+    description: >
+      Attribut-Bag für Activities. Bekannte Schlüssel werden hier beschrieben,
+      weitere Keys sind erlaubt (`additionalProperties`).
+    properties:
+      draw_as:
+        type: string
+        description: "Darstellungsart im Gantt."
+        enum:
+        - line-above
+        - line-below
+        - shift-up
+        - shift-down
+        - dot
+        - square
+        - triangle-up
+        - triangle-down
+        - thick
+        - background
+        default: thick
+        x-translation-key: "activityType:<type>"
+      layer_group:
+        type: string
+        description: "Layer-Gruppe für die Z-Reihenfolge im Gantt."
+        default: default
+        examples: [default, background, marker]
+        x-translation-key: "layer:<layer_group>"
+      color:
+        type: string
+        description: "Farbe des Balkens/Markers (Hex, RGB etc.)."
+        pattern: "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$"
+        default: "#1976d2"
+      default_duration:
+        type: number
+        format: int32
+        description: "Default-Dauer in Minuten (falls vorhanden)."
+      relevant_for:
+        type: array
+        description: "Kommagetrennte Liste der Ressourcentypen, für die die Activity relevant ist."
+        items:
+          type: string
+          enum: [personnel, vehicle, personnel-service, vehicle-service]
+      consider_capacity_conflicts:
+        type: boolean
+        description: "Kapazitätskonflikte berücksichtigen."
+        default: true
+      is_short_break:
+        type: boolean
+        description: "Kennzeichnet eine Kurzpause."
+        default: false
+      is_break:
+        type: boolean
+        description: "Kennzeichnet eine Pause."
+        default: false
+      is_service_start:
+        type: boolean
+        description: "Kennzeichnet Dienstanfang."
+        default: false
+      is_service_end:
+        type: boolean
+        description: "Kennzeichnet Dienstende."
+        default: false
+      is_absence:
+        type: boolean
+        description: "Kennzeichnet Abwesenheiten (z. B. Urlaub, Krank)."
+        default: false
+      is_reserve:
+        type: boolean
+        description: "Kennzeichnet Reserve-/Bereitschaftszeiten."
+        default: false
+    additionalProperties: true
+  LayerGroup:
+    type: object
+    properties:
+      id:
+        type: string
+        description: "Technischer Key der Layer-Gruppe (z. B. background, marker, remarks)."
+      label:
+        type: string
+        description: "Anzeigename (kann per Übersetzung `layer:<id>` angepasst werden)."
+      order:
+        type: integer
+        description: "Reihenfolge/Z-Index; kleinere Werte liegen unten."
+        default: 50
+      description:
+        type: string
+        nullable: true
+    required: [id, label, order]
+  TranslationEntry:
+    type: object
+    description: "Übersetzungseintrag für einen Schlüssel und eine Locale."
+    properties:
+      key:
+        type: string
+        description: "Technischer Key (z. B. `activityType:<id>`, `layer:<id>`)."
+        example: "activityType:service-start"
+      locale:
+        type: string
+        description: "Locale (BCP 47), z. B. de, en, fr-CH."
+        example: "de"
+      label:
+        type: string
+        description: "Anzeigename."
+        nullable: true
+        example: "Dienstanfang"
+      abbreviation:
+        type: string
+        description: "Optionale Kurzform."
+        nullable: true
+        example: "DA"
+    required: [key, locale]
+  TranslationState:
+    type: object
+    description: "Übersetzungs-Map je Locale → Key → Entry."
+    additionalProperties:
+      type: object
+      description: "Locale-Bucket"
+      additionalProperties:
+        type: object
+        properties:
+          label:
+            type: string
+            nullable: true
+          abbreviation:
+            type: string
+            nullable: true
+    example:
+      de:
+        "activityType:service-start":
+          label: "Dienstanfang"
+          abbreviation: "DA"
+        "layer:marker":
+          label: "Marker"
+      en:
+        "activityType:service-start":
+          label: "Service start"
     - scope
+  Personnel:
+    type: object
+    properties:
+      id: { type: string }
+      name: { type: string }
+      externalRef: { type: string, nullable: true }
+      homeBase: { type: string, nullable: true }
+      attributes:
+        type: object
+        additionalProperties: true
+    required: [id, name]
+  PersonnelService:
+    type: object
+    properties:
+      id: { type: string }
+      name: { type: string }
+      poolId: { type: string, nullable: true }
+      attributes:
+        type: object
+        additionalProperties: true
+    required: [id, name]
+  Vehicle:
+    type: object
+    properties:
+      id: { type: string }
+      name: { type: string }
+      typeId: { type: string, nullable: true }
+      externalRef: { type: string, nullable: true }
+      homeDepot: { type: string, nullable: true }
+      attributes:
+        type: object
+        additionalProperties: true
+    required: [id, name]
+  VehicleService:
+    type: object
+    properties:
+      id: { type: string }
+      name: { type: string }
+      poolId: { type: string, nullable: true }
+      attributes:
+        type: object
+        additionalProperties: true
+    required: [id, name]
+  ResourceSnapshot:
+    type: object
+    description: "Gebündelte Ressourcen für Plantafel/Timeline."
+    properties:
+      personnel:
+        type: array
+        items:
+          $ref: '#/components/schemas/Personnel'
+      personnelServices:
+        type: array
+        items:
+          $ref: '#/components/schemas/PersonnelService'
+      personnelServicePools:
+        type: array
+        items:
+          $ref: '#/components/schemas/PersonnelServicePool'
+      personnelPools:
+        type: array
+        items:
+          $ref: '#/components/schemas/PersonnelPool'
+      vehicles:
+        type: array
+        items:
+          $ref: '#/components/schemas/Vehicle'
+      vehicleServices:
+        type: array
+        items:
+          $ref: '#/components/schemas/VehicleService'
+      vehicleServicePools:
+        type: array
+        items:
+          $ref: '#/components/schemas/VehicleServicePool'
+      vehiclePools:
+        type: array
+        items:
+          $ref: '#/components/schemas/VehiclePool'
+      vehicleTypes:
+        type: array
+        items:
+          $ref: '#/components/schemas/VehicleType'
+      vehicleCompositions:
+        type: array
+        items:
+          $ref: '#/components/schemas/VehicleComposition'
+    required:
+    - personnel
+    - personnelServices
+    - personnelServicePools
+    - personnelPools
+    - vehicles
+    - vehicleServices
+    - vehicleServicePools
+    - vehiclePools
+    - vehicleTypes
+    - vehicleCompositions
+  TimelineActivity:
+    type: object
+    description: "Aktivität für Timeline-LOD=activity (neue Logik)."
+    properties:
+      id: { type: string }
+      stage:
+        type: string
+        enum: [base, operations]
+      type: { type: string }
+      start:
+        type: string
+        format: date-time
+      end:
+        type: string
+        format: date-time
+        nullable: true
+      isOpenEnded:
+        type: boolean
+      status:
+        type: string
+        nullable: true
+      label:
+        type: string
+        nullable: true
+      serviceId:
+        type: string
+        nullable: true
+      resourceAssignments:
+        type: array
+        items:
+          type: object
+          properties:
+            resourceId: { type: string }
+            resourceType: { type: string }
+            role: { type: string, nullable: true }
+            lineIndex: { type: integer, nullable: true }
+          required: [resourceId, resourceType]
+      version:
+        type: integer
+        nullable: true
+    required: [id, stage, type, start, isOpenEnded]
+  TimelineService:
+    type: object
+    description: "Aggregierter Dienst/Abwesenheit für LOD=service."
+    properties:
+      id: { type: string }
+      type:
+        type: string
+        enum: [SERVICE, ABSENCE]
+      stage:
+        type: string
+        enum: [base, operations]
+      resourceId: { type: string }
+      start:
+        type: string
+        format: date-time
+      end:
+        type: string
+        format: date-time
+        nullable: true
+      isOpenEnded:
+        type: boolean
+      status:
+        type: string
+        nullable: true
+      label:
+        type: string
+        nullable: true
+      attributes:
+        type: object
+        additionalProperties: true
+    required: [id, type, stage, resourceId, start, isOpenEnded]
+  TimelineResponse:
+    type: object
+    properties:
+      lod:
+        type: string
+        enum: [activity, service]
+      activities:
+        type: array
+        items:
+          $ref: '#/components/schemas/TimelineActivity'
+      services:
+        type: array
+        items:
+          $ref: '#/components/schemas/TimelineService'
+  TemplateSet:
+    type: object
+    properties:
+      id: { type: string }
+      name: { type: string }
+      description: { type: string, nullable: true }
+      tableName: { type: string }
+      createdAt:
+        type: string
+        format: date-time
+      updatedAt:
+        type: string
+        format: date-time
+    required: [id, name, tableName, createdAt, updatedAt]
+  CreateTemplateSetRequest:
+    type: object
+    properties:
+      id: { type: string }
+      name: { type: string }
+      description: { type: string, nullable: true }
+    required: [name]
+  UpdateTemplateSetRequest:
+    type: object
+    properties:
+      name: { type: string }
+      description: { type: string, nullable: true }
+
+  TemplateActivityUpsert:
+    type: object
+    description: Payload zum Anlegen/Aktualisieren einer Template-Aktivität via REST.
+    allOf:
+      - $ref: '#/components/schemas/TimelineActivity'
+
   ActivityMutationRequest:
     type: object
     properties:

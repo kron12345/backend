@@ -27,6 +27,49 @@ export interface Resource {
   attributes?: Record<string, unknown>;
 }
 
+export interface Personnel {
+  id: string;
+  name: string;
+  externalRef?: string | null;
+  homeBase?: string | null;
+  attributes?: Record<string, unknown>;
+}
+
+export type PersonnelListRequest = ListPayload<Personnel>;
+export type PersonnelListResponse = Personnel[];
+
+export interface PersonnelService {
+  id: string;
+  name: string;
+  poolId?: string | null;
+  attributes?: Record<string, unknown>;
+}
+
+export type PersonnelServiceListRequest = ListPayload<PersonnelService>;
+export type PersonnelServiceListResponse = PersonnelService[];
+
+export interface Vehicle {
+  id: string;
+  name: string;
+  typeId?: string | null;
+  externalRef?: string | null;
+  homeDepot?: string | null;
+  attributes?: Record<string, unknown>;
+}
+
+export type VehicleListRequest = ListPayload<Vehicle>;
+export type VehicleListResponse = Vehicle[];
+
+export interface VehicleService {
+  id: string;
+  name: string;
+  poolId?: string | null;
+  attributes?: Record<string, unknown>;
+}
+
+export type VehicleServiceListRequest = ListPayload<VehicleService>;
+export type VehicleServiceListResponse = VehicleService[];
+
 export type PlanWeekResourceKind = 'vehicle-service' | 'personnel-service';
 
 export interface PlanWeekTemplate {
@@ -108,7 +151,11 @@ export interface PlanWeekRolloutResponse {
   createdInstances: WeekInstanceSummary[];
 }
 
-export type WeekInstanceStatus = 'planned' | 'released' | 'in-progress' | 'archived';
+export type WeekInstanceStatus =
+  | 'planned'
+  | 'released'
+  | 'in-progress'
+  | 'archived';
 
 export interface ScheduledService {
   id: string;
@@ -403,7 +450,8 @@ export interface OpReplacementStopLink {
   updatedBy?: string | null;
 }
 
-export type OpReplacementStopLinkListRequest = ListPayload<OpReplacementStopLink>;
+export type OpReplacementStopLinkListRequest =
+  ListPayload<OpReplacementStopLink>;
 export type OpReplacementStopLinkListResponse = OpReplacementStopLink[];
 
 export type TransferNodeKind = 'OP' | 'PERSONNEL_SITE' | 'REPLACEMENT_STOP';
@@ -486,11 +534,15 @@ export interface TopologyImportEventRequest {
   source?: string;
 }
 
-export interface TopologyImportRealtimeEvent extends TopologyImportEventRequest {
+export interface TopologyImportRealtimeEvent
+  extends TopologyImportEventRequest {
   timestamp: string;
 }
 
-export type PlanningStageRealtimeScope = 'resources' | 'activities' | 'timeline';
+export type PlanningStageRealtimeScope =
+  | 'resources'
+  | 'activities'
+  | 'timeline';
 
 export interface PlanningStageRealtimeEvent {
   stageId: StageId;
@@ -529,6 +581,110 @@ export interface TrainSegment {
   attributes?: Record<string, unknown>;
 }
 
+export type ActivityAttributeDrawMode =
+  | 'line-above'
+  | 'line-below'
+  | 'shift-up'
+  | 'shift-down'
+  | 'dot'
+  | 'square'
+  | 'triangle-up'
+  | 'triangle-down'
+  | 'thick'
+  | 'background';
+
+export interface ActivityAttributes {
+  draw_as?: ActivityAttributeDrawMode;
+  layer_group?: string;
+  color?: string;
+  default_duration?: number;
+  relevant_for?: ResourceKind[];
+  consider_capacity_conflicts?: boolean;
+  is_short_break?: boolean;
+  is_break?: boolean;
+  is_service_start?: boolean;
+  is_service_end?: boolean;
+  is_absence?: boolean;
+  is_reserve?: boolean;
+  [key: string]: unknown;
+}
+
+export type ActivityCategory = 'rest' | 'movement' | 'service' | 'other';
+export type ActivityTimeMode = 'duration' | 'range' | 'point';
+export type ActivityFieldKey = 'start' | 'end' | 'from' | 'to' | 'remark';
+
+export interface ActivityTypeDefinition {
+  id: string;
+  label: string;
+  description?: string | null;
+  appliesTo: ResourceKind[];
+  relevantFor: ResourceKind[];
+  category: ActivityCategory;
+  timeMode: ActivityTimeMode;
+  fields: ActivityFieldKey[];
+  defaultDurationMinutes: number;
+}
+
+export interface ActivityTemplate {
+  id: string;
+  label: string;
+  description?: string | null;
+  activityType?: string | null;
+  defaultDurationMinutes?: number | null;
+  attributes?: ActivityAttributes;
+}
+
+export interface ActivityDefinition {
+  id: string;
+  label: string;
+  description?: string | null;
+  activityType: string;
+  templateId?: string | null;
+  defaultDurationMinutes?: number | null;
+  relevantFor?: ResourceKind[];
+  attributes?: ActivityAttributes;
+}
+
+export interface LayerGroup {
+  id: string;
+  label: string;
+  order?: number;
+  description?: string | null;
+}
+
+export interface TranslationEntry {
+  key: string;
+  locale: string;
+  label?: string | null;
+  abbreviation?: string | null;
+}
+
+export type TranslationState = Record<
+  string,
+  Record<string, { label?: string | null; abbreviation?: string | null }>
+>;
+
+export interface ActivityCatalogSnapshot {
+  types: ActivityTypeDefinition[];
+  templates: ActivityTemplate[];
+  definitions: ActivityDefinition[];
+  layerGroups: LayerGroup[];
+  translations: TranslationState;
+}
+
+export interface ResourceSnapshot {
+  personnel: Personnel[];
+  personnelServices: PersonnelService[];
+  personnelServicePools: PersonnelServicePool[];
+  personnelPools: PersonnelPool[];
+  vehicles: Vehicle[];
+  vehicleServices: VehicleService[];
+  vehicleServicePools: VehicleServicePool[];
+  vehiclePools: VehiclePool[];
+  vehicleTypes: VehicleType[];
+  vehicleCompositions: VehicleComposition[];
+}
+
 export interface Activity {
   id: string;
   clientId?: string | null;
@@ -561,7 +717,7 @@ export interface Activity {
   groupOrder?: number | null;
   trainRunId?: string | null;
   trainSegmentIds?: string[];
-  attributes?: Record<string, unknown>;
+  attributes?: ActivityAttributes;
   meta?: Record<string, unknown>;
 }
 

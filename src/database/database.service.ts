@@ -35,7 +35,9 @@ export class DatabaseService implements OnModuleDestroy {
     return pool.query<T>(text, values);
   }
 
-  async withClient<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
+  async withClient<T>(
+    callback: (client: PoolClient) => Promise<T>,
+  ): Promise<T> {
     const pool = this.assertPool();
     const client = await pool.connect();
     try {

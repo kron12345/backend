@@ -38,7 +38,10 @@ async function bootstrap() {
         return;
       }
       const isAllowed = allowedOrigins.some((pattern) => pattern.test(origin));
-      callback(isAllowed ? null : new Error('Origin not allowed by CORS'), isAllowed);
+      callback(
+        isAllowed ? null : new Error('Origin not allowed by CORS'),
+        isAllowed,
+      );
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
