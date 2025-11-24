@@ -4,6 +4,7 @@ import type {
   ActivityVersionData,
   TimelineServiceDto,
   ClientContext,
+  ResourceAssignmentDto,
 } from './timeline.types';
 
 export interface TimelineActivityRow {
@@ -21,6 +22,30 @@ export interface TimelineActivityRow {
       data: ActivityVersionData;
     }[];
   };
+}
+
+const RESOURCE_KIND_VALUES: ResourceAssignmentDto['resourceType'][] = [
+  'personnel',
+  'vehicle',
+  'personnel-service',
+  'vehicle-service',
+];
+
+function normalizeResourceType(
+  value?: string | ResourceAssignmentDto['resourceType'] | null,
+): ResourceAssignmentDto['resourceType'] {
+  if (!value) {
+    return 'personnel';
+  }
+  const canonical = value.toString().trim().toLowerCase().replace(/_/g, '-');
+  if (
+    RESOURCE_KIND_VALUES.includes(
+      canonical as ResourceAssignmentDto['resourceType'],
+    )
+  ) {
+    return canonical as ResourceAssignmentDto['resourceType'];
+  }
+  return 'personnel';
 }
 
 export function pickCurrentVersion(
@@ -47,6 +72,15 @@ export function mapActivityRow(
     logger?.warn(`Activity ${row.id} without current version – skipping.`);
     return null;
   }
+  const normalizedAssignments =
+    currentVersion.data.resourceAssignments?.map((assignment) => ({
+      ...assignment,
+      resourceType: normalizeResourceType(assignment.resourceType ?? null),
+    })) ?? [];
+  const attributes =
+    currentVersion.data.attributes === undefined
+      ? undefined
+      : currentVersion.data.attributes;
   return {
     id: row.id,
     stage: row.stage,
@@ -57,7 +91,12 @@ export function mapActivityRow(
     status: currentVersion.data.status ?? undefined,
     label: currentVersion.data.label ?? undefined,
     serviceId: currentVersion.data.serviceId ?? undefined,
-    resourceAssignments: currentVersion.data.resourceAssignments ?? [],
+    serviceRole: currentVersion.data.serviceRole ?? undefined,
+    from: currentVersion.data.from ?? undefined,
+    to: currentVersion.data.to ?? undefined,
+    remark: currentVersion.data.remark ?? undefined,
+    resourceAssignments: normalizedAssignments,
+    attributes,
     version: currentVersion.version,
   };
 }

@@ -686,6 +686,19 @@ schemas:
       status:
         type: string
         nullable: true
+      serviceRole:
+        type: string
+        nullable: true
+        enum: [start, segment, end]
+      from:
+        type: string
+        nullable: true
+      to:
+        type: string
+        nullable: true
+      remark:
+        type: string
+        nullable: true
       label:
         type: string
         nullable: true
@@ -698,14 +711,19 @@ schemas:
           type: object
           properties:
             resourceId: { type: string }
-            resourceType: { type: string }
+            resourceType:
+              type: string
+              enum: [personnel, vehicle, personnel-service, vehicle-service]
             role: { type: string, nullable: true }
             lineIndex: { type: integer, nullable: true }
           required: [resourceId, resourceType]
+      attributes:
+        $ref: '#/components/schemas/ActivityAttributes'
+        nullable: true
       version:
         type: integer
         nullable: true
-    required: [id, stage, type, start, isOpenEnded]
+    required: [id, stage, type, start, isOpenEnded, resourceAssignments]
   TimelineService:
     type: object
     description: "Aggregierter Dienst/Abwesenheit für LOD=service."

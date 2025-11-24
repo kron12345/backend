@@ -193,10 +193,15 @@ export class TemplateRepository {
           data: {
             label: activity.label ?? null,
             serviceId: activity.serviceId ?? null,
+            serviceRole: activity.serviceRole ?? null,
             start: activity.start,
             end: activity.end ?? null,
             status: activity.status ?? null,
+            from: activity.from ?? null,
+            to: activity.to ?? null,
+            remark: activity.remark ?? null,
             resourceAssignments: activity.resourceAssignments ?? [],
+            attributes: activity.attributes ?? null,
           },
         },
       ],
@@ -226,7 +231,10 @@ export class TemplateRepository {
         JSON.stringify(attributes),
       ],
     );
-    return activity;
+    return {
+      ...activity,
+      resourceAssignments: activity.resourceAssignments ?? [],
+    };
   }
 
   async deleteActivity(tableName: string, activityId: string): Promise<void> {
@@ -289,10 +297,15 @@ export class TemplateRepository {
             data: {
               label: activity.label ?? null,
               serviceId: activity.serviceId ?? null,
+              serviceRole: activity.serviceRole ?? null,
               start: shiftedStart,
               end: shiftedEnd,
               status: activity.status ?? null,
+              from: activity.from ?? null,
+              to: activity.to ?? null,
+              remark: activity.remark ?? null,
               resourceAssignments: activity.resourceAssignments ?? [],
+              attributes: activity.attributes ?? null,
             },
           },
         ],
@@ -336,19 +349,29 @@ export class TemplateRepository {
       [JSON.stringify(payload)],
     );
 
-    return payload.map((row) => ({
-      id: row.id,
-      stage: row.stage,
-      type: row.type,
-      start: row.start_time,
-      end: row.end_time,
-      isOpenEnded: row.is_open_ended,
-      label: row.attributes.versions?.[0]?.data.label ?? undefined,
-      serviceId: row.attributes.versions?.[0]?.data.serviceId ?? undefined,
-      resourceAssignments:
-        row.attributes.versions?.[0]?.data.resourceAssignments ?? [],
-      version: row.attributes.versions?.[0]?.version ?? 1,
-    }));
+    return payload.map((row) => {
+      const version = row.attributes.versions?.[0];
+      const data = version?.data ?? {};
+      const activityAttributes =
+        data.attributes === undefined ? undefined : data.attributes;
+      return {
+        id: row.id,
+        stage: row.stage,
+        type: row.type,
+        start: row.start_time,
+        end: row.end_time,
+        isOpenEnded: row.is_open_ended,
+        label: data.label ?? undefined,
+        serviceId: data.serviceId ?? undefined,
+        serviceRole: data.serviceRole ?? undefined,
+        from: data.from ?? undefined,
+        to: data.to ?? undefined,
+        remark: data.remark ?? undefined,
+        resourceAssignments: data.resourceAssignments ?? [],
+        attributes: activityAttributes,
+        version: version?.version ?? 1,
+      };
+    });
   }
 
   private mapTemplateSet(row: TemplateSetRow): ActivityTemplateSet {

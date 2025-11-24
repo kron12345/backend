@@ -1,8 +1,13 @@
+import type {
+  ActivityAttributes,
+  ResourceKind,
+} from '../planning/planning.types';
+
 export type Lod = 'activity' | 'service';
 
 export interface ResourceAssignmentDto {
   resourceId: string;
-  resourceType: 'PERSONNEL' | 'VEHICLE' | 'PERSONNEL_SERVICE' | 'VEHICLE_SERVICE';
+  resourceType: ResourceKind;
   role?: string | null;
   lineIndex?: number | null;
 }
@@ -11,10 +16,15 @@ export interface ActivityVersionData {
   label?: string | null;
   orderId?: string | null;
   serviceId?: string | null;
+  serviceRole?: 'start' | 'segment' | 'end' | null;
   start: string;
   end?: string | null;
   status?: string | null;
+  from?: string | null;
+  to?: string | null;
+  remark?: string | null;
   resourceAssignments?: ResourceAssignmentDto[];
+  attributes?: ActivityAttributes | null;
 }
 
 export interface ActivityDto {
@@ -27,7 +37,12 @@ export interface ActivityDto {
   status?: string | null;
   label?: string | null;
   serviceId?: string | null;
-  resourceAssignments?: ResourceAssignmentDto[];
+  serviceRole?: 'start' | 'segment' | 'end' | null;
+  from?: string | null;
+  to?: string | null;
+  remark?: string | null;
+  resourceAssignments: ResourceAssignmentDto[];
+  attributes?: ActivityAttributes | null;
   version?: number;
 }
 
